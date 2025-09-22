@@ -5,10 +5,10 @@
     "outDir": "./dist",
 
     /* Environment */
-    "module": "Node16",                 // ✅ fixed (must match moduleResolution)
+    "module": "node16",
     "target": "ES2021",
     "lib": ["ES2021"],
-    "moduleResolution": "node16",       // ✅ matches module
+    "moduleResolution": "node16",
     "types": ["node"],
 
     /* Output */
