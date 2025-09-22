@@ -5,7 +5,6 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const bcrypt_1 = __importDefault(require("bcrypt"));
-const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const prismaclient_js_1 = require("../prismaclient.js");
 const router = (0, express_1.Router)();
 router.post("/register", async (req, res) => {
@@ -18,14 +17,25 @@ router.post("/register", async (req, res) => {
 });
 router.post("/login", async (req, res) => {
     const { username, password } = req.body;
-    const user = await prismaclient_js_1.prisma.user.findUnique({ where: { username } });
-    if (!user)
-        return res.status(401).json({ error: "Invalid credentials" });
-    const valid = await bcrypt_1.default.compare(password, user.password);
-    if (!valid)
-        return res.status(401).json({ error: "Invalid credentials" });
-    const token = jsonwebtoken_1.default.sign({ id: user.id }, process.env["JWT_SECRET"], { expiresIn: "1d" });
-    return res.json({ token });
+    if (!username || !password) {
+        return res.status(400).json({ error: "Username and password are required" });
+    }
+    try {
+        const user = await prismaclient_js_1.prisma.user.findUnique({
+            where: { username: username },
+        });
+        if (!user) {
+            return res.status(404).json({ error: "User not found" });
+        }
+        if (user.password !== password) {
+            return res.status(401).json({ error: "Invalid password" });
+        }
+        return res.json({ message: "Login successful", user });
+    }
+    catch (error) {
+        console.error(error);
+        return res.status(500).json({ error: "Something went wrong" });
+    }
 });
 exports.default = router;
 //# sourceMappingURL=auth.js.map

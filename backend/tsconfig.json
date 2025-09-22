@@ -12,6 +12,7 @@
     "types": ["node"],
 
     /* Output */
+
     "sourceMap": true,
     "declaration": true,
     "declarationMap": true,

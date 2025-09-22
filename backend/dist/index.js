@@ -7,14 +7,14 @@ const express_1 = __importDefault(require("express"));
 const http_1 = __importDefault(require("http"));
 const socket_io_1 = require("socket.io");
 const cors_1 = __importDefault(require("cors"));
-const auth_1 = __importDefault(require("./routes/auth"));
+const auth_js_1 = __importDefault(require("./routes/auth.js"));
 const prismaclient_js_1 = require("./prismaclient.js");
 const redis_1 = require("redis");
 const redis_adapter_1 = require("@socket.io/redis-adapter");
 const app = (0, express_1.default)();
 app.use((0, cors_1.default)());
 app.use(express_1.default.json());
-app.use("/auth", auth_1.default);
+app.use("/auth", auth_js_1.default);
 const server = http_1.default.createServer(app);
 const io = new socket_io_1.Server(server, { cors: { origin: "*" } });
 async function initializeServer() {
