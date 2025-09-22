@@ -1,44 +1,45 @@
 {
-  // Visit https://aka.ms/tsconfig to read more about this file
   "compilerOptions": {
-    // File Layout
-    // "rootDir": "./src",
-    // "outDir": "./dist",
+    /* File Layout */
+    "rootDir": "./src",
+    "outDir": "./dist",
 
-    // Environment Settings
-    // See also https://aka.ms/tsconfig/module
-    "module": "nodenext",
-    "target": "esnext",
-    "types": [],
-    // For nodejs:
-    // "lib": ["esnext"],
-    // "types": ["node"],
-    // and npm install -D @types/node
+    /* Environment */
+    "module": "Node16",                 // ✅ fixed (must match moduleResolution)
+    "target": "ES2021",
+    "lib": ["ES2021"],
+    "moduleResolution": "node16",       // ✅ matches module
+    "types": ["node"],
 
-    // Other Outputs
+    /* Output */
     "sourceMap": true,
     "declaration": true,
     "declarationMap": true,
+    "removeComments": true,
+    "noEmitOnError": true,
 
-    // Stricter Typechecking Options
+    /* Type Checking */
+    "strict": true,
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,
-
-    // Style Options
-    // "noImplicitReturns": true,
-    // "noImplicitOverride": true,
-    // "noUnusedLocals": true,
-    // "noUnusedParameters": true,
-    // "noFallthroughCasesInSwitch": true,
-    // "noPropertyAccessFromIndexSignature": true,
-
-    // Recommended Options
-    "strict": true,
-    "jsx": "react-jsx",
-    "verbatimModuleSyntax": true,
-    "isolatedModules": true,
-    "noUncheckedSideEffectImports": true,
-    "moduleDetection": "force",
+    "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
-  }
+
+    /* Style & Safety */
+    "noImplicitReturns": true,
+    "noImplicitOverride": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "noPropertyAccessFromIndexSignature": true,
+
+    /* Interop */
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+
+    /* Paths */
+    "baseUrl": "./src"
+  },
+  "include": ["src", "src/types/**/*.d.ts"],
+  "exclude": ["node_modules", "dist"]
 }
