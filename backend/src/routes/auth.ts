@@ -19,13 +19,13 @@ router.post("/register", async (req, res) => {
 router.post("/login", async (req,res) => {
   const { username, password } = req.body;
   const user = await prisma.user.findUnique({ where: { username } });
-  if (!user) return res.status(400).json({ error: "User not found" });
+  if (!user) return res.status(401).json({ error: "Invalid credentials" });
 
   const valid = await bcrypt.compare(password, user.password);
   if (!valid) return res.status(401).json({ error: "Invalid credentials" });
 
   const token = jwt.sign({ id: user.id }, process.env["JWT_SECRET"]!, { expiresIn: "1d" });
-  res.json({ token });
+  return res.json({ token });
 });
 
 export default router;
