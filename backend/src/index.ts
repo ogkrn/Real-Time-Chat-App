@@ -3,24 +3,42 @@ import http from "http";
 import { Server } from "socket.io";
 import cors from "cors";
 import jwt from "jsonwebtoken";
+import path from "path";
 import authRoutes from "./routes/auth";
+import messagesRoutes from "./routes/messages";
+import friendsRoutes from "./routes/friends";
+import uploadRoutes from "./routes/upload";
 import { prisma } from "./prismaclient";
-import { createClient } from "redis";
-import { createAdapter } from "@socket.io/redis-adapter";
+// Redis is optional - uncomment if you want to scale across multiple servers
+// import { createClient } from "redis";
+// import { createAdapter } from "@socket.io/redis-adapter";
 
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+// Serve uploaded files statically
+app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
+
 app.use("/auth", authRoutes);
+app.use("/messages", messagesRoutes);
+app.use("/friends", friendsRoutes);
+app.use("/upload", uploadRoutes);
 
 const server = http.createServer(app);
 
-const io = new Server(server, { cors: { origin: "*" } });
+const io = new Server(server, { 
+  cors: { origin: "*" },
+  transports: ['polling', 'websocket']
+});
 
-// Initialize Redis adapter
+// Initialize server
 async function initializeServer() {
+  // Redis adapter is optional - for scaling Socket.IO across multiple servers
+  // Uncomment below if you set up Redis in production
+  /*
   try {
-    const pubClient = createClient({ url: "redis://localhost:6379" });
+    const pubClient = createClient({ url: process.env.REDIS_URL || "redis://localhost:6379" });
     const subClient = pubClient.duplicate();
     
     await pubClient.connect();
@@ -31,8 +49,10 @@ async function initializeServer() {
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     console.warn("⚠️ Redis connection failed, using memory adapter:", errorMessage);
-    // Socket.IO will use memory adapter by default if Redis fails
   }
+  */
+  
+  console.log("📡 Using in-memory adapter (suitable for single server deployment)");
 
   // Authenticate socket connections (middleware) so socket.data.user is set before connection
   io.use(async (socket, next) => {
@@ -62,10 +82,18 @@ async function initializeServer() {
 
     socket.on("send_message", async (data) => {
       try {
-        const { token, content } = data as { token?: string; content: string };
+        const { token, content, recipientId, fileUrl, fileName, fileType, fileSize } = data as { 
+          token?: string; 
+          content: string; 
+          recipientId?: number;
+          fileUrl?: string;
+          fileName?: string;
+          fileType?: string;
+          fileSize?: number;
+        };
 
-  // Prefer authenticated user attached to socket during connection
-  let userId: number | null = socket.data?.user?.id ?? null;
+        // Prefer authenticated user attached to socket during connection
+        let userId: number | null = socket.data?.user?.id ?? null;
         const JWT_SECRET = process.env['JWT_SECRET'] || "supersecretkey";
 
         // If no user on socket, try per-emit token for backward compatibility
@@ -87,12 +115,59 @@ async function initializeServer() {
           userId = idNum;
         }
 
+        // TODO: Enable friendship check after migration is run
+        // Check if users are friends before allowing message send
+        // if (recipientId) {
+        //   const friendship = await prisma.friendship.findFirst({
+        //     where: {
+        //       status: 'accepted',
+        //       OR: [
+        //         { senderId: userId, receiverId: recipientId },
+        //         { senderId: recipientId, receiverId: userId }
+        //       ]
+        //     }
+        //   });
+
+        //   if (!friendship) {
+        //     console.warn(`User ${userId} attempted to message non-friend ${recipientId}`);
+        //     return;
+        //   }
+        // }
+
+        // Create message with recipientId for private messaging
         const message = await prisma.message.create({
-          data: { userId, content },
+          data: { 
+            userId, 
+            content,
+            recipientId: recipientId || null,
+            fileUrl: fileUrl || null,
+            fileName: fileName || null,
+            fileType: fileType || null,
+            fileSize: fileSize || null
+          },
           include: { user: true },
         });
 
-        io.emit("receive_message", message);
+        // If recipientId is provided, emit to both sender and recipient only
+        if (recipientId) {
+          // Emit to all sockets of the sender
+          const senderSockets = await io.fetchSockets();
+          senderSockets.forEach(s => {
+            if (s.data?.user?.id === userId) {
+              s.emit("receive_message", message);
+            }
+          });
+
+          // Emit to all sockets of the recipient
+          senderSockets.forEach(s => {
+            if (s.data?.user?.id === recipientId) {
+              s.emit("receive_message", message);
+            }
+          });
+        } else {
+          // Broadcast to all connected clients (general chat - backward compatibility)
+          io.emit("receive_message", message);
+        }
       } catch (error) {
         console.error("JWT verification failed:", error);
       }

@@ -38,8 +38,33 @@ export default function LoginPage() {
           backgroundImage: `url('/images/background.jpg')`,
         }}
       />
-      {/* Lighter overlay */}
+      
+      {/* Darker overlay */}
       <div className="absolute inset-0 bg-black/40" />
+      
+      {/* Very subtle grid pattern overlay */}
+      <div 
+        className="absolute inset-0 opacity-5"
+        style={{
+          backgroundImage: `linear-gradient(rgba(255,255,255,.03) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.03) 1px, transparent 1px)`,
+          backgroundSize: '60px 60px'
+        }}
+      />
+      
+      {/* Subtle decorative elements */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        {/* Very subtle glows - reduced opacity */}
+        <div className="absolute -top-20 -left-20 w-96 h-96 bg-purple-500/5 rounded-full blur-3xl" style={{ animation: 'pulse 8s ease-in-out infinite' }} />
+        <div className="absolute -bottom-40 -left-40 w-[500px] h-[500px] bg-blue-500/5 rounded-full blur-3xl" style={{ animation: 'pulse 10s ease-in-out infinite 2s' }} />
+        
+        {/* Minimal floating particles - fewer and more subtle */}
+        <div className="absolute top-1/4 left-1/4 w-1.5 h-1.5 bg-white/10 rounded-full" style={{ animation: 'float 12s ease-in-out infinite' }} />
+        <div className="absolute bottom-1/3 right-1/4 w-1.5 h-1.5 bg-white/8 rounded-full" style={{ animation: 'float 15s ease-in-out infinite 3s' }} />
+        
+        {/* Very subtle corner decorations */}
+        <div className="absolute top-0 left-0 w-32 h-32 border-t border-l border-white/3" />
+        <div className="absolute bottom-0 right-0 w-32 h-32 border-b border-r border-white/3" />
+      </div>
 
       <div
         className={`w-full max-w-[480px] bg-white/95 backdrop-blur-sm rounded-lg shadow-2xl p-8 transition-all duration-700 relative z-10 ${

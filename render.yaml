@@ -1,0 +1,45 @@
+version: "3.0"
+
+services:
+  # Backend Service
+  backend:
+    type: web
+    name: chatconnect-backend
+    runtime: node
+    region: oregon
+    plan: free
+    buildCommand: npm install && npx prisma generate && npm run build
+    startCommand: npm start
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 5000
+    
+  # Frontend Service  
+  frontend:
+    type: web
+    name: chatconnect-frontend
+    runtime: node
+    region: oregon
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NEXT_PUBLIC_API_URL
+        value: https://chatconnect-backend.onrender.com
+      - key: NEXT_PUBLIC_SOCKET_URL
+        value: https://chatconnect-backend.onrender.com
+        
+  # PostgreSQL Database
+  database:
+    type: pserv
+    name: chatconnect-db
+    region: oregon
+    plan: free
+    databaseName: chatapp
+    databaseUser: chatapp_user
