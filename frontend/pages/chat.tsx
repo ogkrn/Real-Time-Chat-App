@@ -14,6 +14,7 @@ interface Message {
   content: string;
   userId: number;
   recipientId?: number;
+  groupId?: number;
   user: User;
   createdAt: string;
   fileUrl?: string;
@@ -32,6 +33,31 @@ interface FriendRequest {
   createdAt: string;
 }
 
+interface GroupMember {
+  id: number;
+  groupId: number;
+  userId: number;
+  role: string;
+  joinedAt: string;
+  user: User;
+}
+
+interface Group {
+  id: number;
+  name: string;
+  description?: string;
+  avatarUrl?: string;
+  creatorId: number;
+  creator: User;
+  createdAt: string;
+  updatedAt: string;
+  members: GroupMember[];
+  _count?: {
+    members: number;
+    messages: number;
+  };
+}
+
 export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState("");
@@ -42,6 +68,18 @@ export default function ChatPage() {
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  
+  // Group chat state
+  const [groups, setGroups] = useState<Group[]>([]);
+  const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
+  const [viewMode, setViewMode] = useState<'friends' | 'groups'>('friends');
+  const [showCreateGroup, setShowCreateGroup] = useState(false);
+  const [showGroupInfo, setShowGroupInfo] = useState(false);
+  const [showAddMembers, setShowAddMembers] = useState(false);
+  const [showTransferOwnership, setShowTransferOwnership] = useState(false);
+  const [selectedMembersToAdd, setSelectedMembersToAdd] = useState<number[]>([]);
+  const [selectedNewOwner, setSelectedNewOwner] = useState<number | null>(null);
+  const [groupFormData, setGroupFormData] = useState({ name: '', description: '', memberIds: [] as number[] });
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showAddFriend, setShowAddFriend] = useState(false);
   const [showPendingRequests, setShowPendingRequests] = useState(false);
@@ -49,6 +87,11 @@ export default function ChatPage() {
   const [pendingRequests, setPendingRequests] = useState<FriendRequest[]>([]);
   const [uploadingFile, setUploadingFile] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  
+  // Unread messages tracking
+  const [lastReadTimestamps, setLastReadTimestamps] = useState<Record<string, number>>({});
+  const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
+  
   const socketRef = useRef<any | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
@@ -75,6 +118,125 @@ export default function ChatPage() {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  // Load last read timestamps from localStorage
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("lastReadTimestamps");
+      if (saved) {
+        setLastReadTimestamps(JSON.parse(saved));
+      }
+    }
+  }, []);
+
+  // Save last read timestamps to localStorage
+  useEffect(() => {
+    if (typeof window !== "undefined" && Object.keys(lastReadTimestamps).length > 0) {
+      localStorage.setItem("lastReadTimestamps", JSON.stringify(lastReadTimestamps));
+    }
+  }, [lastReadTimestamps]);
+
+  // Calculate unread counts when friends/groups load or timestamps change
+  useEffect(() => {
+    const fetchUnreadCounts = async () => {
+      if (!currentUser || typeof window === "undefined") return;
+      
+      const token = localStorage.getItem("token");
+      if (!token) return;
+
+      // Don't run if we don't have any friends or groups yet
+      if (friends.length === 0 && groups.length === 0) return;
+
+      const counts: Record<string, number> = {};
+
+      // Fetch unread counts for each friend
+      for (const friend of friends) {
+        try {
+          const conversationKey = `friend-${friend.id}`;
+          const lastRead = lastReadTimestamps[conversationKey] || 0;
+          
+          // Fetch messages for this friend with currentUserId
+          const response = await axios.get(
+            `${process.env.NEXT_PUBLIC_API_URL}/messages/${friend.id}?currentUserId=${currentUser.id}`,
+            { headers: { Authorization: `Bearer ${token}` } }
+          );
+          
+          const friendMessages = Array.isArray(response.data) ? response.data : [];
+          const unread = friendMessages.filter((msg: Message) =>
+            msg.userId === friend.id && // Only count messages from the friend
+            new Date(msg.createdAt).getTime() > lastRead
+          ).length;
+          
+          if (unread > 0) counts[conversationKey] = unread;
+        } catch (error: any) {
+          // Only log if it's not a 404 (no messages yet)
+          if (error?.response?.status !== 404) {
+            console.error(`Error fetching messages for friend ${friend.id}:`, error);
+          }
+        }
+      }
+
+      // Fetch unread counts for each group
+      for (const group of groups) {
+        try {
+          const conversationKey = `group-${group.id}`;
+          const lastRead = lastReadTimestamps[conversationKey] || 0;
+          
+          // Fetch messages for this group
+          const response = await axios.get(
+            `${process.env.NEXT_PUBLIC_API_URL}/messages/group/${group.id}`,
+            { headers: { Authorization: `Bearer ${token}` } }
+          );
+          
+          const groupMessages = Array.isArray(response.data) ? response.data : [];
+          const unread = groupMessages.filter((msg: Message) =>
+            msg.userId !== currentUser?.id && // Don't count own messages
+            new Date(msg.createdAt).getTime() > lastRead
+          ).length;
+          
+          if (unread > 0) counts[conversationKey] = unread;
+        } catch (error: any) {
+          // Only log if it's not a 404 (no messages yet)
+          if (error?.response?.status !== 404) {
+            console.error(`Error fetching messages for group ${group.id}:`, error);
+          }
+        }
+      }
+
+      setUnreadCounts(counts);
+    };
+
+    fetchUnreadCounts();
+  }, [friends, groups, currentUser]); // Removed lastReadTimestamps to prevent constant refetching
+
+  // Mark conversation as read when selected
+  useEffect(() => {
+    if (selectedUser) {
+      const conversationKey = `friend-${selectedUser.id}`;
+      setLastReadTimestamps(prev => ({
+        ...prev,
+        [conversationKey]: Date.now()
+      }));
+      // Clear unread count immediately
+      setUnreadCounts(prev => {
+        const newCounts = { ...prev };
+        delete newCounts[conversationKey];
+        return newCounts;
+      });
+    } else if (selectedGroup) {
+      const conversationKey = `group-${selectedGroup.id}`;
+      setLastReadTimestamps(prev => ({
+        ...prev,
+        [conversationKey]: Date.now()
+      }));
+      // Clear unread count immediately
+      setUnreadCounts(prev => {
+        const newCounts = { ...prev };
+        delete newCounts[conversationKey];
+        return newCounts;
+      });
+    }
+  }, [selectedUser, selectedGroup]);
 
   // Close emoji picker when clicking outside
   useEffect(() => {
@@ -152,6 +314,18 @@ export default function ChatPage() {
           setPendingRequests(requestsResponse.data || []);
         } catch (error) {
           console.log("Pending requests not available yet - migration needed");
+        }
+
+        // Fetch groups
+        try {
+          const groupsResponse = await axios.get(
+            `${process.env.NEXT_PUBLIC_API_URL}/groups`,
+            { headers: { Authorization: `Bearer ${token}` } }
+          );
+          setGroups(groupsResponse.data.groups || []);
+        } catch (error) {
+          console.log("Groups not available yet");
+          setGroups([]);
         }
       } catch (error) {
         console.error("Failed to fetch users:", error);
@@ -238,7 +412,51 @@ export default function ChatPage() {
 
     socket.on("receive_message", (msg: any) => {
       console.log("📨 Received message:", msg);
+      // Add ALL messages to state - filtering happens in conversationMessages
+      // This ensures messages appear immediately for the sender
       setMessages((prev) => [...prev, msg]);
+      
+      // Update unread counts for messages not in the current conversation
+      setUnreadCounts((prevCounts) => {
+        const newCounts = { ...prevCounts };
+        
+        // Check if this message is for a DM
+        if (msg.recipientId) {
+          const friendId = msg.userId; // The sender is the friend
+          const conversationKey = `friend-${friendId}`;
+          
+          // Only increment if we're not currently viewing this conversation
+          // and the message is from the friend (not from us)
+          setSelectedUser((currentSelectedUser) => {
+            setCurrentUser((currentUserState) => {
+              if (currentSelectedUser?.id !== friendId && msg.userId !== currentUserState?.id) {
+                newCounts[conversationKey] = (newCounts[conversationKey] || 0) + 1;
+              }
+              return currentUserState;
+            });
+            return currentSelectedUser;
+          });
+        }
+        
+        // Check if this message is for a group
+        if (msg.groupId) {
+          const conversationKey = `group-${msg.groupId}`;
+          
+          // Only increment if we're not currently viewing this group
+          // and the message is not from us
+          setSelectedGroup((currentSelectedGroup) => {
+            setCurrentUser((currentUserState) => {
+              if (currentSelectedGroup?.id !== msg.groupId && msg.userId !== currentUserState?.id) {
+                newCounts[conversationKey] = (newCounts[conversationKey] || 0) + 1;
+              }
+              return currentUserState;
+            });
+            return currentSelectedGroup;
+          });
+        }
+        
+        return newCounts;
+      });
     });
 
     return () => {
@@ -272,24 +490,58 @@ export default function ChatPage() {
     loadMessages();
   }, [selectedUser, currentUser]);
 
+  // Load group messages when group is selected
+  useEffect(() => {
+    const loadGroupMessages = async () => {
+      if (!selectedGroup || !currentUser) {
+        return;
+      }
+
+      const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+      if (!token) return;
+
+      try {
+        const response = await axios.get(
+          `${process.env.NEXT_PUBLIC_API_URL}/messages/group/${selectedGroup.id}`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        setMessages(response.data.messages || []);
+      } catch (error) {
+        console.error("Failed to load group messages:", error);
+      }
+    };
+
+    loadGroupMessages();
+  }, [selectedGroup, currentUser]);
+
   const sendMessage = (fileData?: { fileUrl: string; fileName: string; fileType: string; fileSize: number }) => {
-    if ((!newMessage.trim() && !fileData) || !selectedUser) return;
+    if ((!newMessage.trim() && !fileData) || (!selectedUser && !selectedGroup)) return;
 
     const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
     const sock = socketRef.current;
     
     if (sock && sock.connected && token) {
-      sock.emit("send_message", { 
-        token, 
+      const messageData: any = {
+        token,
         content: fileData ? (newMessage.trim() || `Sent ${fileData.fileName}`) : newMessage.trim(),
-        recipientId: selectedUser.id,
-        ...(fileData && {
-          fileUrl: fileData.fileUrl,
-          fileName: fileData.fileName,
-          fileType: fileData.fileType,
-          fileSize: fileData.fileSize
-        })
-      });
+      };
+
+      // Add recipient info based on view mode
+      if (viewMode === 'groups' && selectedGroup) {
+        messageData.groupId = selectedGroup.id;
+      } else if (selectedUser) {
+        messageData.recipientId = selectedUser.id;
+      }
+
+      // Add file data if present
+      if (fileData) {
+        messageData.fileUrl = fileData.fileUrl;
+        messageData.fileName = fileData.fileName;
+        messageData.fileType = fileData.fileType;
+        messageData.fileSize = fileData.fileSize;
+      }
+
+      sock.emit("send_message", messageData);
       setNewMessage("");
     } else {
       setConnectionError("Not connected to server");
@@ -425,26 +677,189 @@ export default function ChatPage() {
     }
   };
 
-  const clearChat = async () => {
-    if (!selectedUser || !currentUser) return;
+  // ============ GROUP FUNCTIONS ============
+  const fetchGroups = async () => {
+    const token = localStorage.getItem("token");
+    try {
+      const response = await axios.get(
+        `${process.env.NEXT_PUBLIC_API_URL}/groups`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setGroups(response.data.groups || []);
+    } catch (error) {
+      console.error("Failed to fetch groups:", error);
+      setGroups([]);
+    }
+  };
+
+  const createGroup = async (name: string, description: string, memberIds: number[]) => {
+    const token = localStorage.getItem("token");
+    try {
+      const response = await axios.post(
+        `${process.env.NEXT_PUBLIC_API_URL}/groups`,
+        { name, description, memberIds },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      
+      // Refresh groups list
+      await fetchGroups();
+      setShowCreateGroup(false);
+      alert(`Group "${name}" created successfully!`);
+      return response.data;
+    } catch (error: any) {
+      alert(error.response?.data?.error || "Failed to create group");
+      throw error;
+    }
+  };
+
+  const addGroupMembers = async (groupId: number, memberIds: number[]) => {
+    const token = localStorage.getItem("token");
+    try {
+      await axios.post(
+        `${process.env.NEXT_PUBLIC_API_URL}/groups/${groupId}/members`,
+        { memberIds },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      
+      // Refresh groups
+      await fetchGroups();
+      alert("Members added successfully!");
+    } catch (error: any) {
+      alert(error.response?.data?.error || "Failed to add members");
+    }
+  };
+
+  const removeGroupMember = async (groupId: number, userId: number) => {
+    const token = localStorage.getItem("token");
+    try {
+      await axios.delete(
+        `${process.env.NEXT_PUBLIC_API_URL}/groups/${groupId}/members/${userId}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      
+      // Refresh groups
+      await fetchGroups();
+      alert("Member removed successfully!");
+    } catch (error: any) {
+      alert(error.response?.data?.error || "Failed to remove member");
+    }
+  };
+
+  const leaveGroup = async (groupId: number) => {
+    const token = localStorage.getItem("token");
+    try {
+      await axios.post(
+        `${process.env.NEXT_PUBLIC_API_URL}/groups/${groupId}/leave`,
+        {},
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      
+      // Refresh groups and clear selection if leaving current group
+      await fetchGroups();
+      if (selectedGroup?.id === groupId) {
+        setSelectedGroup(null);
+        setMessages([]);
+      }
+      alert("You have left the group");
+    } catch (error: any) {
+      alert(error.response?.data?.error || "Failed to leave group");
+    }
+  };
+
+  const deleteGroup = async (groupId: number) => {
+    const token = localStorage.getItem("token");
+    try {
+      await axios.delete(
+        `${process.env.NEXT_PUBLIC_API_URL}/groups/${groupId}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      
+      // Refresh groups and clear selection if deleting current group
+      await fetchGroups();
+      if (selectedGroup?.id === groupId) {
+        setSelectedGroup(null);
+        setMessages([]);
+      }
+      alert("Group deleted successfully!");
+    } catch (error: any) {
+      alert(error.response?.data?.error || "Failed to delete group");
+    }
+  };
+
+  const addMembersToGroup = async () => {
+    if (!selectedGroup || selectedMembersToAdd.length === 0) return;
     
     const token = localStorage.getItem("token");
     try {
-      // Delete messages from database
-      await axios.delete(
-        `${process.env.NEXT_PUBLIC_API_URL}/messages/${selectedUser.id}`,
-        { 
-          headers: { Authorization: `Bearer ${token}` },
-          data: { currentUserId: currentUser.id }
-        }
+      await axios.post(
+        `${process.env.NEXT_PUBLIC_API_URL}/groups/${selectedGroup.id}/members`,
+        { memberIds: selectedMembersToAdd },
+        { headers: { Authorization: `Bearer ${token}` } }
       );
+      
+      // Refresh groups and close modal
+      await fetchGroups();
+      setShowAddMembers(false);
+      setSelectedMembersToAdd([]);
+      alert("Members added successfully!");
+    } catch (error: any) {
+      alert(error.response?.data?.error || "Failed to add members");
+    }
+  };
+
+  const transferOwnership = async () => {
+    if (!selectedGroup || !selectedNewOwner) return;
+    
+    const token = localStorage.getItem("token");
+    try {
+      // We'll need to create a new backend endpoint for this
+      await axios.post(
+        `${process.env.NEXT_PUBLIC_API_URL}/groups/${selectedGroup.id}/transfer-ownership`,
+        { newOwnerId: selectedNewOwner },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      
+      // Refresh groups and close modal
+      await fetchGroups();
+      setShowTransferOwnership(false);
+      setSelectedNewOwner(null);
+      alert("Ownership transferred successfully!");
+    } catch (error: any) {
+      alert(error.response?.data?.error || "Failed to transfer ownership");
+    }
+  };
+  
+  // ============ END GROUP FUNCTIONS ============
+
+  const clearChat = async () => {
+    const token = localStorage.getItem("token");
+    try {
+      if (selectedGroup && currentUser) {
+        // Clear group chat (admin only)
+        await axios.delete(
+          `${process.env.NEXT_PUBLIC_API_URL}/messages/group/${selectedGroup.id}`,
+          { 
+            headers: { Authorization: `Bearer ${token}` },
+            data: { userId: currentUser.id }
+          }
+        );
+      } else if (selectedUser && currentUser) {
+        // Clear DM chat
+        await axios.delete(
+          `${process.env.NEXT_PUBLIC_API_URL}/messages/${selectedUser.id}`,
+          { 
+            headers: { Authorization: `Bearer ${token}` },
+            data: { currentUserId: currentUser.id }
+          }
+        );
+      }
       
       // Clear local messages
       setMessages([]);
       setShowClearConfirm(false);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Failed to clear chat:", error);
-      alert("Failed to clear chat");
+      alert(error.response?.data?.error || "Failed to clear chat");
     }
   };
 
@@ -456,11 +871,22 @@ export default function ChatPage() {
 
   // Filter messages for the selected conversation
   const conversationMessages = messages.filter(msg => {
-    if (!currentUser || !selectedUser) return false;
-    return (
-      (msg.userId === currentUser.id && msg.recipientId === selectedUser.id) ||
-      (msg.userId === selectedUser.id && msg.recipientId === currentUser.id)
-    );
+    if (!currentUser) return false;
+    
+    // For group chat
+    if (viewMode === 'groups' && selectedGroup) {
+      return msg.groupId === selectedGroup.id;
+    }
+    
+    // For DMs
+    if (selectedUser) {
+      return (
+        (msg.userId === currentUser.id && msg.recipientId === selectedUser.id) ||
+        (msg.userId === selectedUser.id && msg.recipientId === currentUser.id)
+      );
+    }
+    
+    return false;
   });
 
   return (
@@ -469,7 +895,9 @@ export default function ChatPage() {
       <div className="w-[320px] bg-[#2b2d31] flex flex-col">
         {/* Sidebar Header */}
         <div className="h-12 px-4 flex items-center justify-between border-b border-[#1e1f22] shadow-sm">
-          <h1 className="text-white font-semibold text-base">Direct Messages</h1>
+          <h1 className="text-white font-semibold text-base">
+            {viewMode === 'friends' ? 'Direct Messages' : 'Group Chats'}
+          </h1>
           <div className="flex items-center gap-2">
             {pendingRequests.length > 0 && (
               <button
@@ -485,15 +913,27 @@ export default function ChatPage() {
                 </span>
               </button>
             )}
-            <button
-              onClick={() => setShowAddFriend(true)}
-              className="text-[#23A559] hover:text-white transition-colors duration-200 p-1 rounded hover:bg-[#35373c]"
-              title="Add Friend"
-            >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M15 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm-9-2V7H4v3H1v2h3v3h2v-3h3v-2H6zm9 4c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
-              </svg>
-            </button>
+            {viewMode === 'friends' ? (
+              <button
+                onClick={() => setShowAddFriend(true)}
+                className="text-[#23A559] hover:text-white transition-colors duration-200 p-1 rounded hover:bg-[#35373c]"
+                title="Add Friend"
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M15 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm-9-2V7H4v3H1v2h3v3h2v-3h3v-2H6zm9 4c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+                </svg>
+              </button>
+            ) : (
+              <button
+                onClick={() => setShowCreateGroup(true)}
+                className="text-[#23A559] hover:text-white transition-colors duration-200 p-1 rounded hover:bg-[#35373c]"
+                title="Create Group"
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm5 11h-4v4h-2v-4H7v-2h4V7h2v4h4v2z"/>
+                </svg>
+              </button>
+            )}
             <button
               onClick={handleLogout}
               className="text-[#b5bac1] hover:text-white transition-colors duration-200 text-sm px-2 py-1 rounded hover:bg-[#35373c]"
@@ -501,6 +941,38 @@ export default function ChatPage() {
               Logout
             </button>
           </div>
+        </div>
+
+        {/* View Mode Toggle Tabs */}
+        <div className="flex bg-[#1e1f22] mx-2 mt-2 rounded overflow-hidden">
+          <button
+            onClick={() => {
+              setViewMode('friends');
+              setSelectedGroup(null);
+              setMessages([]);
+            }}
+            className={`flex-1 py-2 text-sm font-medium transition-all duration-200 ${
+              viewMode === 'friends'
+                ? 'bg-[#5865F2] text-white'
+                : 'bg-transparent text-[#b5bac1] hover:bg-[#35373c]'
+            }`}
+          >
+            Friends
+          </button>
+          <button
+            onClick={() => {
+              setViewMode('groups');
+              setSelectedUser(null);
+              setMessages([]);
+            }}
+            className={`flex-1 py-2 text-sm font-medium transition-all duration-200 ${
+              viewMode === 'groups'
+                ? 'bg-[#5865F2] text-white'
+                : 'bg-transparent text-[#b5bac1] hover:bg-[#35373c]'
+            }`}
+          >
+            Groups
+          </button>
         </div>
 
         {/* Search */}
@@ -519,42 +991,101 @@ export default function ChatPage() {
           </div>
         </div>
 
-        {/* Users List */}
+        {/* Users/Groups List */}
         <div className="flex-1 overflow-y-auto">
-          <div className="px-2 pt-4 pb-1">
-            <div className="px-2 text-[#949BA4] text-xs font-semibold uppercase tracking-wide">
-              Direct Messages — {filteredUsers.length}
-            </div>
-          </div>
-          {filteredUsers.map((user) => (
-            <div
-              key={user.id}
-              onClick={() => setSelectedUser(user)}
-              className={`mx-2 px-2 py-1.5 rounded cursor-pointer flex items-center gap-3 transition-all duration-200 group ${
-                selectedUser?.id === user.id 
-                  ? 'bg-[#404249] text-white' 
-                  : 'hover:bg-[#35373c] text-[#949BA4]'
-              }`}
-            >
-              {/* Avatar */}
-              <div className="relative flex-shrink-0">
-                <div className="w-8 h-8 rounded-full bg-[#5865F2] flex items-center justify-center text-white font-semibold text-sm">
-                  {user.username[0].toUpperCase()}
+          {viewMode === 'friends' ? (
+            <>
+              <div className="px-2 pt-4 pb-1">
+                <div className="px-2 text-[#949BA4] text-xs font-semibold uppercase tracking-wide">
+                  Direct Messages — {filteredUsers.length}
                 </div>
-                {/* Online status indicator */}
-                <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-[#23A559] border-2 border-[#2b2d31] rounded-full"></div>
               </div>
-              {/* User Info */}
-              <div className="flex-1 min-w-0">
-                <p className={`font-medium truncate text-[15px] ${
-                  selectedUser?.id === user.id ? 'text-white' : 'text-[#f2f3f5] group-hover:text-white'
-                }`}>
-                  {user.username}
-                </p>
-                <p className="text-[#87898c] text-xs truncate">Online</p>
+              {filteredUsers.map((user) => (
+                <div
+                  key={user.id}
+                  onClick={() => {
+                    setSelectedUser(user);
+                    setSelectedGroup(null);
+                  }}
+                  className={`mx-2 px-2 py-1.5 rounded cursor-pointer flex items-center gap-3 transition-all duration-200 group ${
+                    selectedUser?.id === user.id 
+                      ? 'bg-[#404249] text-white' 
+                      : 'hover:bg-[#35373c] text-[#949BA4]'
+                  }`}
+                >
+                  {/* Avatar */}
+                  <div className="relative flex-shrink-0">
+                    <div className="w-8 h-8 rounded-full bg-[#5865F2] flex items-center justify-center text-white font-semibold text-sm">
+                      {user.username[0].toUpperCase()}
+                    </div>
+                    {/* Online status indicator */}
+                    <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-[#23A559] border-2 border-[#2b2d31] rounded-full"></div>
+                  </div>
+                  {/* User Info */}
+                  <div className="flex-1 min-w-0">
+                    <p className={`font-medium truncate text-[15px] ${
+                      selectedUser?.id === user.id ? 'text-white' : 'text-[#f2f3f5] group-hover:text-white'
+                    }`}>
+                      {user.username}
+                    </p>
+                    <p className="text-[#87898c] text-xs truncate">Online</p>
+                  </div>
+                  {/* Unread badge */}
+                  {unreadCounts[`friend-${user.id}`] > 0 && (
+                    <div className="flex-shrink-0 bg-[#ED4245] text-white text-xs font-bold rounded-full min-w-[20px] h-5 flex items-center justify-center px-1.5">
+                      {unreadCounts[`friend-${user.id}`] > 99 ? '99+' : unreadCounts[`friend-${user.id}`]}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </>
+          ) : (
+            <>
+              <div className="px-2 pt-4 pb-1">
+                <div className="px-2 text-[#949BA4] text-xs font-semibold uppercase tracking-wide">
+                  Group Chats — {groups.length}
+                </div>
               </div>
-            </div>
-          ))}
+              {groups.map((group) => (
+                <div
+                  key={group.id}
+                  onClick={() => {
+                    setSelectedGroup(group);
+                    setSelectedUser(null);
+                  }}
+                  className={`mx-2 px-2 py-1.5 rounded cursor-pointer flex items-center gap-3 transition-all duration-200 group ${
+                    selectedGroup?.id === group.id 
+                      ? 'bg-[#404249] text-white' 
+                      : 'hover:bg-[#35373c] text-[#949BA4]'
+                  }`}
+                >
+                  {/* Group Avatar */}
+                  <div className="relative flex-shrink-0">
+                    <div className="w-8 h-8 rounded-full bg-[#23A559] flex items-center justify-center text-white font-semibold text-sm">
+                      {group.name[0].toUpperCase()}
+                    </div>
+                  </div>
+                  {/* Group Info */}
+                  <div className="flex-1 min-w-0">
+                    <p className={`font-medium truncate text-[15px] ${
+                      selectedGroup?.id === group.id ? 'text-white' : 'text-[#f2f3f5] group-hover:text-white'
+                    }`}>
+                      {group.name}
+                    </p>
+                    <p className="text-[#87898c] text-xs truncate">
+                      {group.members.length} {group.members.length === 1 ? 'member' : 'members'}
+                    </p>
+                  </div>
+                  {/* Unread badge */}
+                  {unreadCounts[`group-${group.id}`] > 0 && (
+                    <div className="flex-shrink-0 bg-[#ED4245] text-white text-xs font-bold rounded-full min-w-[20px] h-5 flex items-center justify-center px-1.5">
+                      {unreadCounts[`group-${group.id}`] > 99 ? '99+' : unreadCounts[`group-${group.id}`]}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </>
+          )}
         </div>
       </div>
 
@@ -571,14 +1102,35 @@ export default function ChatPage() {
         {/* Dark overlay for better contrast */}
         <div className="absolute inset-0 bg-[#313338]/95 z-0"></div>
         
-        {selectedUser ? (
+        {(selectedUser || selectedGroup) ? (
           <div className="relative z-10 flex flex-col h-full">
             {/* Chat Header */}
             <div className="h-12 px-4 flex items-center gap-3 border-b border-[#26272b] shadow-sm bg-[#313338]/50 backdrop-blur-sm">
-              <span className="text-[#80848e] text-xl">@</span>
-              <h2 className="text-white font-semibold text-base">{selectedUser.username}</h2>
+              {selectedUser ? (
+                <>
+                  <span className="text-[#80848e] text-xl">@</span>
+                  <h2 className="text-white font-semibold text-base">{selectedUser.username}</h2>
+                </>
+              ) : (
+                <>
+                  <span className="text-[#80848e] text-xl">#</span>
+                  <h2 className="text-white font-semibold text-base">{selectedGroup?.name}</h2>
+                  <span className="text-[#87898c] text-sm">
+                    ({selectedGroup?.members.length} {selectedGroup?.members.length === 1 ? 'member' : 'members'})
+                  </span>
+                  <button
+                    onClick={() => setShowGroupInfo(true)}
+                    className="text-[#b5bac1] hover:text-white transition-colors duration-200 p-1 rounded hover:bg-[#35373c]"
+                    title="Group Info"
+                  >
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/>
+                    </svg>
+                  </button>
+                </>
+              )}
               <div className="flex-1"></div>
-              {conversationMessages.length > 0 && (
+              {conversationMessages.length > 0 && (selectedUser || (selectedGroup && selectedGroup.members.find(m => m.userId === currentUser?.id)?.role === 'admin')) && (
                 <button
                   onClick={() => setShowClearConfirm(true)}
                   className="text-[#ED4245] hover:text-white hover:bg-[#ED4245]/20 transition-all duration-200 px-3 py-1.5 rounded text-sm font-medium flex items-center gap-2"
@@ -604,12 +1156,19 @@ export default function ChatPage() {
             <div className="flex-1 overflow-y-auto px-4 py-4">
               {conversationMessages.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full">
-                  <div className="w-16 h-16 rounded-full bg-[#5865F2] flex items-center justify-center text-white font-bold text-2xl mb-4">
-                    {selectedUser.username[0].toUpperCase()}
+                  <div className={`w-16 h-16 rounded-full flex items-center justify-center text-white font-bold text-2xl mb-4 ${
+                    selectedGroup ? 'bg-[#23A559]' : 'bg-[#5865F2]'
+                  }`}>
+                    {selectedGroup ? selectedGroup.name[0].toUpperCase() : selectedUser?.username[0].toUpperCase()}
                   </div>
-                  <h3 className="text-white text-2xl font-bold mb-1">{selectedUser.username}</h3>
+                  <h3 className="text-white text-2xl font-bold mb-1">
+                    {selectedGroup ? selectedGroup.name : selectedUser?.username}
+                  </h3>
                   <p className="text-[#b5bac1] text-sm mb-4">
-                    This is the beginning of your direct message history with @{selectedUser.username}.
+                    {selectedGroup 
+                      ? `This is the beginning of #${selectedGroup.name}.`
+                      : `This is the beginning of your direct message history with @${selectedUser?.username}.`
+                    }
                   </p>
                 </div>
               ) : (
@@ -787,7 +1346,13 @@ export default function ChatPage() {
                   onChange={(e) => setNewMessage(e.target.value)}
                   onKeyPress={handleKeyPress}
                   className="flex-1 bg-transparent border-none text-[#dbdee1] placeholder-[#87898c] focus:outline-none text-[15px] leading-5"
-                  placeholder={isConnected ? `Message @${selectedUser.username}` : "Connecting..."}
+                  placeholder={
+                    !isConnected 
+                      ? "Connecting..." 
+                      : selectedGroup 
+                        ? `Message #${selectedGroup.name}` 
+                        : `Message @${selectedUser?.username}`
+                  }
                   disabled={!isConnected}
                 />
 
@@ -918,8 +1483,17 @@ export default function ChatPage() {
           <div className="bg-[#313338] rounded-lg p-6 w-[440px]" onClick={(e) => e.stopPropagation()}>
             <h2 className="text-white text-xl font-bold mb-3">Clear Chat History</h2>
             <p className="text-[#b5bac1] mb-6">
-              Are you sure you want to delete all messages with <span className="text-white font-semibold">@{selectedUser?.username}</span>? 
-              This action cannot be undone.
+              {selectedUser ? (
+                <>
+                  Are you sure you want to delete all messages with <span className="text-white font-semibold">@{selectedUser?.username}</span>? 
+                  This action cannot be undone.
+                </>
+              ) : selectedGroup ? (
+                <>
+                  Are you sure you want to delete all messages in <span className="text-white font-semibold">{selectedGroup?.name}</span>? 
+                  This action cannot be undone and will affect all group members.
+                </>
+              ) : null}
             </p>
             <div className="flex gap-3 justify-end">
               <button
@@ -933,6 +1507,386 @@ export default function ChatPage() {
                 className="bg-[#ED4245] hover:bg-[#C93B3D] text-white px-4 py-2 rounded transition-colors font-medium"
               >
                 Clear Chat
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create Group Modal */}
+      {showCreateGroup && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50" onClick={() => setShowCreateGroup(false)}>
+          <div className="bg-[#313338] rounded-lg p-6 w-[500px] max-h-[700px] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-white text-xl font-bold">Create Group</h2>
+              <button
+                onClick={() => setShowCreateGroup(false)}
+                className="text-[#b5bac1] hover:text-white transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+            
+            <form onSubmit={async (e) => {
+              e.preventDefault();
+              const formData = new FormData(e.currentTarget);
+              const groupName = formData.get('groupName') as string;
+              const groupDescription = formData.get('groupDescription') as string;
+              
+              // Get selected member IDs from checkboxes
+              const selectedMembers: number[] = [];
+              friends.forEach(friend => {
+                if (formData.get(`member-${friend.id}`) === 'on') {
+                  selectedMembers.push(friend.id);
+                }
+              });
+
+              if (!groupName.trim()) {
+                alert('Please enter a group name');
+                return;
+              }
+
+              try {
+                await createGroup(groupName, groupDescription, selectedMembers);
+              } catch (error) {
+                console.error('Failed to create group:', error);
+              }
+            }}>
+              <div className="mb-4">
+                <label className="block text-[#b5bac1] text-sm font-medium mb-2">Group Name *</label>
+                <input
+                  type="text"
+                  name="groupName"
+                  placeholder="Enter group name..."
+                  className="w-full bg-[#1e1f22] text-white rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#5865F2]"
+                  required
+                />
+              </div>
+
+              <div className="mb-4">
+                <label className="block text-[#b5bac1] text-sm font-medium mb-2">Description (Optional)</label>
+                <textarea
+                  name="groupDescription"
+                  placeholder="What's this group about?"
+                  className="w-full bg-[#1e1f22] text-white rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#5865F2] min-h-[80px] resize-none"
+                />
+              </div>
+
+              <div className="mb-6">
+                <label className="block text-[#b5bac1] text-sm font-medium mb-2">Add Members (Optional)</label>
+                <div className="max-h-[250px] overflow-y-auto space-y-2 bg-[#1e1f22] rounded p-3">
+                  {friends.length === 0 ? (
+                    <p className="text-[#87898c] text-sm text-center py-4">No friends to add</p>
+                  ) : (
+                    friends.map(friend => (
+                      <label key={friend.id} className="flex items-center gap-3 p-2 hover:bg-[#2b2d31] rounded cursor-pointer transition-colors">
+                        <input
+                          type="checkbox"
+                          name={`member-${friend.id}`}
+                          className="w-4 h-4 text-[#5865F2] bg-[#313338] border-[#4e5058] rounded focus:ring-[#5865F2] focus:ring-2"
+                        />
+                        <div className="w-8 h-8 rounded-full bg-[#5865F2] flex items-center justify-center text-white font-semibold text-sm flex-shrink-0">
+                          {friend.username[0].toUpperCase()}
+                        </div>
+                        <span className="text-white">{friend.username}</span>
+                      </label>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              <div className="flex gap-3 justify-end">
+                <button
+                  type="button"
+                  onClick={() => setShowCreateGroup(false)}
+                  className="bg-[#4e5058] hover:bg-[#5c5e66] text-white px-4 py-2 rounded transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="bg-[#5865F2] hover:bg-[#4752C4] text-white px-4 py-2 rounded transition-colors font-medium"
+                >
+                  Create Group
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Group Info Modal */}
+      {showGroupInfo && selectedGroup && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50" onClick={() => setShowGroupInfo(false)}>
+          <div className="bg-[#313338] rounded-lg p-6 w-[500px] max-h-[700px] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-white text-xl font-bold">Group Information</h2>
+              <button
+                onClick={() => setShowGroupInfo(false)}
+                className="text-[#b5bac1] hover:text-white transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Group Details */}
+            <div className="mb-6">
+              <div className="flex items-center gap-4 mb-4">
+                <div className="w-16 h-16 rounded-full bg-[#23A559] flex items-center justify-center text-white font-bold text-2xl">
+                  {selectedGroup.name[0].toUpperCase()}
+                </div>
+                <div>
+                  <h3 className="text-white text-lg font-bold">{selectedGroup.name}</h3>
+                  <p className="text-[#87898c] text-sm">
+                    {selectedGroup.members.length} {selectedGroup.members.length === 1 ? 'member' : 'members'}
+                  </p>
+                </div>
+              </div>
+              {selectedGroup.description && (
+                <div className="bg-[#1e1f22] rounded p-3 mb-4">
+                  <p className="text-[#b5bac1] text-sm">{selectedGroup.description}</p>
+                </div>
+              )}
+            </div>
+
+            {/* Members List */}
+            <div className="mb-6">
+              <h3 className="text-[#b5bac1] text-sm font-semibold uppercase tracking-wide mb-3">
+                Members — {selectedGroup.members.length}
+              </h3>
+              <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                {selectedGroup.members.map(member => {
+                  const isAdmin = member.role === 'admin';
+                  const isCurrentUser = member.userId === currentUser?.id;
+                  const currentUserIsAdmin = selectedGroup.members.find(m => m.userId === currentUser?.id)?.role === 'admin';
+                  
+                  return (
+                    <div key={member.userId} className="flex items-center justify-between bg-[#2b2d31] rounded p-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-[#5865F2] flex items-center justify-center text-white font-semibold">
+                          {member.user.username[0].toUpperCase()}
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <p className="text-white font-medium">{member.user.username}</p>
+                            {isAdmin && (
+                              <span className="bg-[#5865F2] text-white text-xs px-2 py-0.5 rounded font-medium">
+                                Admin
+                              </span>
+                            )}
+                            {isCurrentUser && (
+                              <span className="text-[#87898c] text-xs">(You)</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      {currentUserIsAdmin && !isCurrentUser && !isAdmin && (
+                        <button
+                          onClick={() => {
+                            if (confirm(`Remove ${member.user.username} from the group?`)) {
+                              removeGroupMember(selectedGroup.id, member.userId);
+                            }
+                          }}
+                          className="bg-[#ED4245] hover:bg-[#C93B3D] text-white px-3 py-1.5 rounded text-sm transition-colors"
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Group Actions */}
+            <div className="space-y-3 border-t border-[#26272b] pt-4">
+              {selectedGroup.members.find(m => m.userId === currentUser?.id)?.role === 'admin' && (
+                <>
+                  <button
+                    onClick={() => {
+                      setShowGroupInfo(false);
+                      setShowAddMembers(true);
+                    }}
+                    className="w-full bg-[#23A559] hover:bg-[#1F8F4D] text-white px-4 py-2 rounded transition-colors font-medium"
+                  >
+                    Add Members
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowGroupInfo(false);
+                      setShowTransferOwnership(true);
+                    }}
+                    className="w-full bg-[#5865F2] hover:bg-[#4752C4] text-white px-4 py-2 rounded transition-colors font-medium"
+                  >
+                    Transfer Ownership
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (confirm(`Are you sure you want to delete "${selectedGroup.name}"? This action cannot be undone.`)) {
+                        deleteGroup(selectedGroup.id);
+                        setShowGroupInfo(false);
+                      }
+                    }}
+                    className="w-full bg-[#ED4245] hover:bg-[#C93B3D] text-white px-4 py-2 rounded transition-colors font-medium"
+                  >
+                    Delete Group
+                  </button>
+                </>
+              )}
+              {/* Only show Leave Group if user is not the creator */}
+              {selectedGroup.creatorId !== currentUser?.id && (
+                <button
+                  onClick={() => {
+                    if (confirm(`Leave "${selectedGroup.name}"?`)) {
+                      leaveGroup(selectedGroup.id);
+                      setShowGroupInfo(false);
+                    }
+                  }}
+                  className="w-full bg-[#4e5058] hover:bg-[#5c5e66] text-white px-4 py-2 rounded transition-colors"
+                >
+                  Leave Group
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Members Modal */}
+      {showAddMembers && selectedGroup && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50" onClick={() => setShowAddMembers(false)}>
+          <div className="bg-[#313338] rounded-lg p-6 w-[500px] max-h-[600px] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-white text-xl font-bold">Add Members to {selectedGroup.name}</h2>
+              <button
+                onClick={() => setShowAddMembers(false)}
+                className="text-[#b5bac1] hover:text-white transition-colors"
+              >
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M18.4 4L12 10.4L5.6 4L4 5.6L10.4 12L4 18.4L5.6 20L12 13.6L18.4 20L20 18.4L13.6 12L20 5.6L18.4 4Z"/>
+                </svg>
+              </button>
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-[#b5bac1] text-sm font-medium mb-2">Select Friends to Add</label>
+              <div className="max-h-[350px] overflow-y-auto space-y-2 bg-[#1e1f22] rounded p-3">
+                {friends.filter(friend => 
+                  !selectedGroup.members.some(m => m.userId === friend.id)
+                ).length === 0 ? (
+                  <p className="text-[#87898c] text-sm text-center py-4">All friends are already members</p>
+                ) : (
+                  friends.filter(friend => 
+                    !selectedGroup.members.some(m => m.userId === friend.id)
+                  ).map(friend => (
+                    <label key={friend.id} className="flex items-center gap-3 p-2 hover:bg-[#2b2d31] rounded cursor-pointer transition-colors">
+                      <input
+                        type="checkbox"
+                        checked={selectedMembersToAdd.includes(friend.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedMembersToAdd([...selectedMembersToAdd, friend.id]);
+                          } else {
+                            setSelectedMembersToAdd(selectedMembersToAdd.filter(id => id !== friend.id));
+                          }
+                        }}
+                        className="w-4 h-4 text-[#5865F2] bg-[#313338] border-[#4e5058] rounded focus:ring-[#5865F2] focus:ring-2"
+                      />
+                      <div className="w-8 h-8 rounded-full bg-[#5865F2] flex items-center justify-center text-white font-semibold text-sm flex-shrink-0">
+                        {friend.username[0].toUpperCase()}
+                      </div>
+                      <span className="text-white">{friend.username}</span>
+                    </label>
+                  ))
+                )}
+              </div>
+            </div>
+
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => {
+                  setShowAddMembers(false);
+                  setSelectedMembersToAdd([]);
+                }}
+                className="bg-[#4e5058] hover:bg-[#5c5e66] text-white px-4 py-2 rounded transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={addMembersToGroup}
+                disabled={selectedMembersToAdd.length === 0}
+                className="bg-[#23A559] hover:bg-[#1F8F4D] text-white px-4 py-2 rounded transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Add Members ({selectedMembersToAdd.length})
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Transfer Ownership Modal */}
+      {showTransferOwnership && selectedGroup && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50" onClick={() => setShowTransferOwnership(false)}>
+          <div className="bg-[#313338] rounded-lg p-6 w-[500px] max-h-[600px] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-white text-xl font-bold">Transfer Ownership</h2>
+              <button
+                onClick={() => setShowTransferOwnership(false)}
+                className="text-[#b5bac1] hover:text-white transition-colors"
+              >
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M18.4 4L12 10.4L5.6 4L4 5.6L10.4 12L4 18.4L5.6 20L12 13.6L18.4 20L20 18.4L13.6 12L20 5.6L18.4 4Z"/>
+                </svg>
+              </button>
+            </div>
+
+            <p className="text-[#b5bac1] mb-4 text-sm">
+              Select a member to become the new owner of <span className="text-white font-semibold">{selectedGroup.name}</span>. 
+              You will become a regular member after transferring ownership.
+            </p>
+
+            <div className="mb-4">
+              <label className="block text-[#b5bac1] text-sm font-medium mb-2">Select New Owner</label>
+              <div className="max-h-[300px] overflow-y-auto space-y-2 bg-[#1e1f22] rounded p-3">
+                {selectedGroup.members.filter(m => m.userId !== currentUser?.id).map(member => (
+                  <label key={member.userId} className="flex items-center gap-3 p-2 hover:bg-[#2b2d31] rounded cursor-pointer transition-colors">
+                    <input
+                      type="radio"
+                      name="newOwner"
+                      checked={selectedNewOwner === member.userId}
+                      onChange={() => setSelectedNewOwner(member.userId)}
+                      className="w-4 h-4 text-[#5865F2] bg-[#313338] border-[#4e5058] focus:ring-[#5865F2] focus:ring-2"
+                    />
+                    <div className="w-8 h-8 rounded-full bg-[#5865F2] flex items-center justify-center text-white font-semibold text-sm flex-shrink-0">
+                      {member.user.username[0].toUpperCase()}
+                    </div>
+                    <div className="flex-1">
+                      <span className="text-white">{member.user.username}</span>
+                      {member.role === 'admin' && (
+                        <span className="ml-2 text-xs bg-[#5865F2] text-white px-2 py-0.5 rounded">Admin</span>
+                      )}
+                    </div>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => {
+                  setShowTransferOwnership(false);
+                  setSelectedNewOwner(null);
+                }}
+                className="bg-[#4e5058] hover:bg-[#5c5e66] text-white px-4 py-2 rounded transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={transferOwnership}
+                disabled={!selectedNewOwner}
+                className="bg-[#5865F2] hover:bg-[#4752C4] text-white px-4 py-2 rounded transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Transfer Ownership
               </button>
             </div>
           </div>

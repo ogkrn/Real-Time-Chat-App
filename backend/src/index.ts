@@ -8,6 +8,8 @@ import authRoutes from "./routes/auth";
 import messagesRoutes from "./routes/messages";
 import friendsRoutes from "./routes/friends";
 import uploadRoutes from "./routes/upload";
+import groupsRoutes from "./routes/groups";
+import passwordResetRoutes from "./routes/password-reset";
 import { prisma } from "./prismaclient";
 // Redis is optional - uncomment if you want to scale across multiple servers
 // import { createClient } from "redis";
@@ -21,9 +23,11 @@ app.use(express.json());
 app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
 
 app.use("/auth", authRoutes);
+app.use("/password-reset", passwordResetRoutes);
 app.use("/messages", messagesRoutes);
 app.use("/friends", friendsRoutes);
 app.use("/upload", uploadRoutes);
+app.use("/groups", groupsRoutes);
 
 const server = http.createServer(app);
 
@@ -82,10 +86,12 @@ async function initializeServer() {
 
     socket.on("send_message", async (data) => {
       try {
-        const { token, content, recipientId, fileUrl, fileName, fileType, fileSize } = data as { 
+        console.log("📨 Received send_message event:", JSON.stringify(data, null, 2));
+        const { token, content, recipientId, groupId, fileUrl, fileName, fileType, fileSize } = data as { 
           token?: string; 
           content: string; 
           recipientId?: number;
+          groupId?: number;
           fileUrl?: string;
           fileName?: string;
           fileType?: string;
@@ -134,12 +140,13 @@ async function initializeServer() {
         //   }
         // }
 
-        // Create message with recipientId for private messaging
+        // Create message with recipientId for DM or groupId for group chat
         const message = await prisma.message.create({
           data: { 
             userId, 
             content,
             recipientId: recipientId || null,
+            groupId: groupId || null,
             fileUrl: fileUrl || null,
             fileName: fileName || null,
             fileType: fileType || null,
@@ -148,12 +155,34 @@ async function initializeServer() {
           include: { user: true },
         });
 
-        // If recipientId is provided, emit to both sender and recipient only
-        if (recipientId) {
-          // Emit to all sockets of the sender
+        console.log("💾 Message created:", message.id, "GroupId:", groupId, "RecipientId:", recipientId);
+
+        // Handle group messages
+        if (groupId) {
+          console.log("📢 Broadcasting to group:", groupId);
+          // Get all group members
+          const members = await prisma.groupMember.findMany({
+            where: { groupId },
+            select: { userId: true }
+          });
+
+          // Emit to all sockets of group members
+          const sockets = await io.fetchSockets();
+          console.log("🔍 Total sockets:", sockets.length, "Group members:", members.length);
+          sockets.forEach(s => {
+            if (members.some(m => m.userId === s.data?.user?.id)) {
+              console.log("✅ Emitting to socket:", s.id, "user:", s.data?.user?.username);
+              s.emit("receive_message", message);
+            }
+          });
+        } else if (recipientId) {
+          console.log("📤 Sending DM to recipient:", recipientId);
+          // Handle direct messages - emit to both sender and recipient
           const senderSockets = await io.fetchSockets();
+          console.log("🔍 Total sockets:", senderSockets.length);
           senderSockets.forEach(s => {
             if (s.data?.user?.id === userId) {
+              console.log("✅ Emitting to sender:", s.id, "user:", s.data?.user?.username);
               s.emit("receive_message", message);
             }
           });
@@ -161,6 +190,7 @@ async function initializeServer() {
           // Emit to all sockets of the recipient
           senderSockets.forEach(s => {
             if (s.data?.user?.id === recipientId) {
+              console.log("✅ Emitting to recipient:", s.id, "user:", s.data?.user?.username);
               s.emit("receive_message", message);
             }
           });

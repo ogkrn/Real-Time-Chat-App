@@ -101,4 +101,73 @@ router.delete("/:userId", async (req, res) => {
   }
 });
 
+// Get messages for a group
+router.get("/group/:groupId", async (req, res) => {
+  try {
+    const { groupId } = req.params;
+
+    // Fetch all messages for this group
+    const messages = await prisma.message.findMany({
+      where: {
+        groupId: parseInt(groupId)
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            username: true,
+            email: true
+          }
+        }
+      },
+      orderBy: {
+        createdAt: 'asc'
+      }
+    });
+
+    return res.json({ messages });
+  } catch (error: any) {
+    console.error("Fetch group messages error:", error.message);
+    return res.status(500).json({ error: error.message || "Internal server error" });
+  }
+});
+
+// Delete all messages in a group (admin only)
+router.delete("/group/:groupId", async (req, res) => {
+  try {
+    const { groupId } = req.params;
+    const { userId } = req.body;
+
+    if (!userId) {
+      return res.status(400).json({ error: "User ID is required" });
+    }
+
+    // Check if user is admin of the group
+    const membership = await prisma.groupMember.findUnique({
+      where: {
+        groupId_userId: {
+          groupId: parseInt(groupId),
+          userId: parseInt(userId)
+        }
+      }
+    });
+
+    if (!membership || membership.role !== 'admin') {
+      return res.status(403).json({ error: "Only group admins can clear chat history" });
+    }
+
+    // Delete all messages in the group
+    await prisma.message.deleteMany({
+      where: {
+        groupId: parseInt(groupId)
+      }
+    });
+
+    return res.json({ success: true, message: "Group chat history cleared" });
+  } catch (error: any) {
+    console.error("Delete group messages error:", error.message);
+    return res.status(500).json({ error: error.message || "Internal server error" });
+  }
+});
+
 export default router;

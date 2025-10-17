@@ -8,14 +8,16 @@ generator client {
 }
 
 model User {
-  id                Int          @id @default(autoincrement())
-  username          String       @unique
-  email             String       @unique
-  password          String
-  createdAt         DateTime     @default(now())
-  messages          Message[]
-  sentFriendships   Friendship[] @relation("SentFriendships")
-  receivedFriendships Friendship[] @relation("ReceivedFriendships")
+  id                  Int              @id @default(autoincrement())
+  username            String           @unique
+  email               String           @unique
+  password            String
+  createdAt           DateTime         @default(now())
+  messages            Message[]
+  sentFriendships     Friendship[]     @relation("SentFriendships")
+  receivedFriendships Friendship[]     @relation("ReceivedFriendships")
+  createdGroups       Group[]          @relation("GroupCreator")
+  groupMemberships    GroupMember[]
 }
 
 model Message {
@@ -24,7 +26,9 @@ model Message {
   createdAt   DateTime @default(now())
   userId      Int
   user        User     @relation(fields: [userId], references: [id])
-  recipientId Int?     // Optional for backward compatibility with existing messages
+  recipientId Int?     // For direct messages
+  groupId     Int?     // For group messages
+  group       Group?   @relation(fields: [groupId], references: [id])
   fileUrl     String?  // URL/path to uploaded file
   fileName    String?  // Original file name
   fileType    String?  // MIME type (image/jpeg, video/mp4, etc.)
@@ -42,4 +46,41 @@ model Friendship {
   receiver    User     @relation("ReceivedFriendships", fields: [receiverId], references: [id])
   
   @@unique([senderId, receiverId])
+}
+
+model Group {
+  id          Int           @id @default(autoincrement())
+  name        String
+  description String?
+  avatarUrl   String?       // Optional group avatar
+  creatorId   Int
+  creator     User          @relation("GroupCreator", fields: [creatorId], references: [id])
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  members     GroupMember[]
+  messages    Message[]
+}
+
+model GroupMember {
+  id        Int      @id @default(autoincrement())
+  groupId   Int
+  userId    Int
+  role      String   @default("member") // member, admin
+  joinedAt  DateTime @default(now())
+  group     Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id])
+  
+  @@unique([groupId, userId])
+}
+
+model PasswordReset {
+  id        Int      @id @default(autoincrement())
+  email     String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  used      Boolean  @default(false)
+  
+  @@index([email])
+  @@index([token])
 }
