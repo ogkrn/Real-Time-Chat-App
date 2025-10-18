@@ -1,6 +1,10 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Fix turbopack root directory warning
+  turbopack: {
+    root: ".",
+  },
   // Proxy API and Socket.IO requests to backend in development
   // In production, set NEXT_PUBLIC_API_URL and NEXT_PUBLIC_SOCKET_URL to your backend URL
   async rewrites() {
@@ -18,3 +22,4 @@ const nextConfig: NextConfig = {
 };
 
 export default nextConfig;
+
