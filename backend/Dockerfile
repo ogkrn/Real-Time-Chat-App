@@ -22,6 +22,6 @@ RUN npx prisma generate
 # Expose port
 EXPOSE 5000
 
-# Create start script that runs migrations then starts app
+# Create start script that runs migrations with error handling
 ENTRYPOINT ["/bin/sh", "-c"]
-CMD ["npx prisma migrate deploy && node dist/index.js"]
+CMD ["echo 'Running migrations...' && npx prisma migrate deploy --skip-generate && echo 'Migrations complete!' && echo 'Starting app...' && node dist/index.js"]
