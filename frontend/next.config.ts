@@ -1,10 +1,7 @@
 import type { NextConfig } from "next";
+import { join } from "path";
 
 const nextConfig: NextConfig = {
-  // Fix turbopack root directory warning
-  turbopack: {
-    root: ".",
-  },
   // Disable ESLint during build
   eslint: {
     ignoreDuringBuilds: true,
