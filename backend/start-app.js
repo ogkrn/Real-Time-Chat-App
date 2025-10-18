@@ -1,32 +1,48 @@
 #!/usr/bin/env node
 
-const { exec } = require('child_process');
-const fs = require('fs');
+const { spawn } = require('child_process');
 const path = require('path');
 
-async function runMigrations() {
+async function runCommand(command, args = []) {
   return new Promise((resolve, reject) => {
-    console.log('🔄 Running database migrations...');
-    exec('npx prisma migrate deploy --skip-generate', (error, stdout, stderr) => {
-      if (error) {
-        console.log('⚠️ Migration warning (may be expected):', stderr);
-        // Continue anyway - migrations might have already been run
+    console.log(`Running: ${command} ${args.join(' ')}`);
+    const proc = spawn(command, args, {
+      stdio: 'inherit',
+      shell: true,
+      cwd: __dirname
+    });
+
+    proc.on('close', (code) => {
+      if (code !== 0 && code !== 2) {
+        // Code 2 is OK for prisma migrate (already migrated)
+        console.log(`Command exited with code ${code}`);
       }
-      console.log('✅ Migrations step complete');
       resolve();
+    });
+
+    proc.on('error', (err) => {
+      console.error(`Error running command: ${err.message}`);
+      resolve(); // Continue anyway
     });
   });
 }
 
-async function startApp() {
+async function start() {
   try {
-    await runMigrations();
+    console.log('🔄 Ensuring Prisma Client is generated...');
+    await runCommand('npx', ['prisma', 'generate']);
+
+    console.log('🔄 Running database migrations...');
+    await runCommand('npx', ['prisma', 'migrate', 'deploy']);
+
+    console.log('✅ Migrations complete!');
     console.log('🚀 Starting application...');
+    
     require('./dist/index.js');
   } catch (error) {
-    console.error('❌ Error:', error);
+    console.error('❌ Error during startup:', error);
     process.exit(1);
   }
 }
 
-startApp();
+start();
