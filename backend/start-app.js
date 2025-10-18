@@ -1,48 +1,57 @@
 #!/usr/bin/env node
 
-const { spawn } = require('child_process');
-const path = require('path');
+const { execSync } = require('child_process');
+const fs = require('fs');
 
-async function runCommand(command, args = []) {
-  return new Promise((resolve, reject) => {
-    console.log(`Running: ${command} ${args.join(' ')}`);
-    const proc = spawn(command, args, {
-      stdio: 'inherit',
-      shell: true,
-      cwd: __dirname
-    });
+console.log('='.repeat(50));
+console.log('🚀 Starting application initialization...');
+console.log('='.repeat(50));
 
-    proc.on('close', (code) => {
-      if (code !== 0 && code !== 2) {
-        // Code 2 is OK for prisma migrate (already migrated)
-        console.log(`Command exited with code ${code}`);
-      }
-      resolve();
-    });
+// Check environment
+console.log('\n📋 Environment Check:');
+console.log('DATABASE_URL:', process.env.DATABASE_URL ? 'SET' : 'NOT SET');
+console.log('NODE_ENV:', process.env.NODE_ENV);
+console.log('PORT:', process.env.PORT);
 
-    proc.on('error', (err) => {
-      console.error(`Error running command: ${err.message}`);
-      resolve(); // Continue anyway
-    });
-  });
-}
+try {
+  // Generate Prisma Client
+  console.log('\n🔧 Generating Prisma Client...');
+  execSync('npx prisma generate', { stdio: 'inherit' });
+  console.log('✅ Prisma Client generated');
 
-async function start() {
+  // Run migrations with verbose output
+  console.log('\n🔄 Running database migrations...');
   try {
-    console.log('🔄 Ensuring Prisma Client is generated...');
-    await runCommand('npx', ['prisma', 'generate']);
-
-    console.log('🔄 Running database migrations...');
-    await runCommand('npx', ['prisma', 'migrate', 'deploy']);
-
-    console.log('✅ Migrations complete!');
-    console.log('🚀 Starting application...');
-    
-    require('./dist/index.js');
-  } catch (error) {
-    console.error('❌ Error during startup:', error);
-    process.exit(1);
+    execSync('npx prisma migrate deploy', { stdio: 'inherit' });
+    console.log('✅ Migrations completed successfully');
+  } catch (migrationError) {
+    console.log('⚠️ Migration encountered an issue (may be expected):');
+    console.log(migrationError.message);
+    // Continue anyway - app might still work
   }
-}
 
-start();
+  // Verify Prisma Client works
+  console.log('\n✔️ Verifying database connection...');
+  const { PrismaClient } = require('@prisma/client');
+  const prisma = new PrismaClient();
+  
+  prisma.$connect()
+    .then(() => {
+      console.log('✅ Database connection verified');
+      prisma.$disconnect();
+      
+      // Now start the app
+      console.log('\n' + '='.repeat(50));
+      console.log('🚀 Starting Express app...');
+      console.log('='.repeat(50) + '\n');
+      require('./dist/index.js');
+    })
+    .catch((error) => {
+      console.error('❌ Database connection failed:', error.message);
+      process.exit(1);
+    });
+
+} catch (error) {
+  console.error('❌ Fatal error during initialization:', error.message);
+  process.exit(1);
+}
