@@ -49,7 +49,7 @@ export default function Home() {
             <br />
             Chat Effortlessly
           </h1>
-          <p className="text-xl text-[#b5bac1] mb-12 max-w-2xl mx-auto leading-relaxed">
+          <p className="text-xl text-white mb-12 max-w-2xl mx-auto leading-relaxed">
             Experience real-time messaging with friends, share photos, videos, and files seamlessly. Built for speed, designed for simplicity.
           </p>
           
