@@ -4,4 +4,6 @@ npm-debug.log
 .gitignore
 README.md
 .env
+.env.local
+prisma/.env
 dist
