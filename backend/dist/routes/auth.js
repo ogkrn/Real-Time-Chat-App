@@ -5,6 +5,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const bcrypt_1 = __importDefault(require("bcrypt"));
+const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const prismaclient_1 = require("../prismaclient");
 const router = (0, express_1.Router)();
 router.post("/register", async (req, res) => {
@@ -16,11 +17,21 @@ router.post("/register", async (req, res) => {
         if (password.length < 8) {
             return res.status(400).json({ error: "Password must be at least 8 characters long" });
         }
-        const existingUser = await prismaclient_1.prisma.user.findUnique({
-            where: { email }
+        const existingUser = await prismaclient_1.prisma.user.findFirst({
+            where: {
+                OR: [
+                    { email },
+                    { username }
+                ]
+            }
         });
         if (existingUser) {
-            return res.status(409).json({ error: "Email already exists" });
+            if (existingUser.email === email) {
+                return res.status(409).json({ error: "Email already exists" });
+            }
+            if (existingUser.username === username) {
+                return res.status(409).json({ error: "Username already taken" });
+            }
         }
         const hashed = await bcrypt_1.default.hash(password, 10);
         const user = await prismaclient_1.prisma.user.create({
@@ -50,15 +61,38 @@ router.post("/login", async (req, res) => {
         if (!isValidPassword) {
             return res.status(401).json({ error: "Invalid credentials" });
         }
+        const JWT_SECRET = process.env['JWT_SECRET'] || "supersecretkey";
+        const token = jsonwebtoken_1.default.sign({ id: user.id, username: user.username, email: user.email }, JWT_SECRET, { expiresIn: "7d" });
         const { password: _, ...userWithoutPassword } = user;
         return res.json({
             message: "Login successful",
             user: userWithoutPassword,
-            userId: user.id
+            userId: user.id,
+            token
         });
     }
     catch (error) {
         console.error("Login error:", error.message);
+        return res.status(500).json({ error: error.message || "Internal server error" });
+    }
+});
+router.get("/users", async (_req, res) => {
+    try {
+        const users = await prismaclient_1.prisma.user.findMany({
+            select: {
+                id: true,
+                username: true,
+                email: true,
+                createdAt: true
+            },
+            orderBy: {
+                username: 'asc'
+            }
+        });
+        return res.json({ users });
+    }
+    catch (error) {
+        console.error("Fetch users error:", error.message);
         return res.status(500).json({ error: error.message || "Internal server error" });
     }
 });

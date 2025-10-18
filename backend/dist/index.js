@@ -8,29 +8,31 @@ const http_1 = __importDefault(require("http"));
 const socket_io_1 = require("socket.io");
 const cors_1 = __importDefault(require("cors"));
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
+const path_1 = __importDefault(require("path"));
 const auth_1 = __importDefault(require("./routes/auth"));
+const messages_1 = __importDefault(require("./routes/messages"));
+const friends_1 = __importDefault(require("./routes/friends"));
+const upload_1 = __importDefault(require("./routes/upload"));
+const groups_1 = __importDefault(require("./routes/groups"));
+const password_reset_1 = __importDefault(require("./routes/password-reset"));
 const prismaclient_1 = require("./prismaclient");
-const redis_1 = require("redis");
-const redis_adapter_1 = require("@socket.io/redis-adapter");
 const app = (0, express_1.default)();
 app.use((0, cors_1.default)());
 app.use(express_1.default.json());
+app.use("/uploads", express_1.default.static(path_1.default.join(__dirname, "../uploads")));
 app.use("/auth", auth_1.default);
+app.use("/password-reset", password_reset_1.default);
+app.use("/messages", messages_1.default);
+app.use("/friends", friends_1.default);
+app.use("/upload", upload_1.default);
+app.use("/groups", groups_1.default);
 const server = http_1.default.createServer(app);
-const io = new socket_io_1.Server(server, { cors: { origin: "*" } });
+const io = new socket_io_1.Server(server, {
+    cors: { origin: "*" },
+    transports: ['polling', 'websocket']
+});
 async function initializeServer() {
-    try {
-        const pubClient = (0, redis_1.createClient)({ url: "redis://localhost:6379" });
-        const subClient = pubClient.duplicate();
-        await pubClient.connect();
-        await subClient.connect();
-        io.adapter((0, redis_adapter_1.createAdapter)(pubClient, subClient));
-        console.log("✅ Redis adapter connected successfully");
-    }
-    catch (error) {
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        console.warn("⚠️ Redis connection failed, using memory adapter:", errorMessage);
-    }
+    console.log("📡 Using in-memory adapter (suitable for single server deployment)");
     io.use(async (socket, next) => {
         const JWT_SECRET = process.env['JWT_SECRET'] || "supersecretkey";
         try {
@@ -59,7 +61,8 @@ async function initializeServer() {
         console.log("User connected:", socket.id, "user:", socket.data?.user?.username ?? "(anonymous)");
         socket.on("send_message", async (data) => {
             try {
-                const { token, content } = data;
+                console.log("📨 Received send_message event:", JSON.stringify(data, null, 2));
+                const { token, content, recipientId, groupId, fileUrl, fileName, fileType, fileSize } = data;
                 let userId = socket.data?.user?.id ?? null;
                 const JWT_SECRET = process.env['JWT_SECRET'] || "supersecretkey";
                 if (!userId) {
@@ -79,10 +82,54 @@ async function initializeServer() {
                     userId = idNum;
                 }
                 const message = await prismaclient_1.prisma.message.create({
-                    data: { userId, content },
+                    data: {
+                        userId,
+                        content,
+                        recipientId: recipientId || null,
+                        groupId: groupId || null,
+                        fileUrl: fileUrl || null,
+                        fileName: fileName || null,
+                        fileType: fileType || null,
+                        fileSize: fileSize || null
+                    },
                     include: { user: true },
                 });
-                io.emit("receive_message", message);
+                console.log("💾 Message created:", message.id, "GroupId:", groupId, "RecipientId:", recipientId);
+                if (groupId) {
+                    console.log("📢 Broadcasting to group:", groupId);
+                    const members = await prismaclient_1.prisma.groupMember.findMany({
+                        where: { groupId },
+                        select: { userId: true }
+                    });
+                    const sockets = await io.fetchSockets();
+                    console.log("🔍 Total sockets:", sockets.length, "Group members:", members.length);
+                    sockets.forEach(s => {
+                        if (members.some(m => m.userId === s.data?.user?.id)) {
+                            console.log("✅ Emitting to socket:", s.id, "user:", s.data?.user?.username);
+                            s.emit("receive_message", message);
+                        }
+                    });
+                }
+                else if (recipientId) {
+                    console.log("📤 Sending DM to recipient:", recipientId);
+                    const senderSockets = await io.fetchSockets();
+                    console.log("🔍 Total sockets:", senderSockets.length);
+                    senderSockets.forEach(s => {
+                        if (s.data?.user?.id === userId) {
+                            console.log("✅ Emitting to sender:", s.id, "user:", s.data?.user?.username);
+                            s.emit("receive_message", message);
+                        }
+                    });
+                    senderSockets.forEach(s => {
+                        if (s.data?.user?.id === recipientId) {
+                            console.log("✅ Emitting to recipient:", s.id, "user:", s.data?.user?.username);
+                            s.emit("receive_message", message);
+                        }
+                    });
+                }
+                else {
+                    io.emit("receive_message", message);
+                }
             }
             catch (error) {
                 console.error("JWT verification failed:", error);
