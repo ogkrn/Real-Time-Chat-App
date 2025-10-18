@@ -5,6 +5,7 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 COPY prisma ./prisma/
+COPY start-app.js ./
 
 # Install dependencies
 RUN npm install
@@ -22,6 +23,5 @@ RUN npx prisma generate
 # Expose port
 EXPOSE 5000
 
-# Create start script that runs migrations with error handling
-ENTRYPOINT ["/bin/sh", "-c"]
-CMD ["echo 'Running migrations...' && npx prisma migrate deploy --skip-generate && echo 'Migrations complete!' && echo 'Starting app...' && node dist/index.js"]
+# Start the application with migrations
+CMD ["node", "start-app.js"]
