@@ -1,0 +1,4 @@
+pages/**/*.tsx
+pages/**/*.ts
+app/**/*.tsx
+app/**/*.ts
