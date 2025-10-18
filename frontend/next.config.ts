@@ -9,6 +9,16 @@ const nextConfig: NextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
+  // Redirect root to login
+  async redirects() {
+    return [
+      {
+        source: "/",
+        destination: "/login",
+        permanent: false,
+      },
+    ];
+  },
   // Proxy API and Socket.IO requests to backend in development
   // In production, set NEXT_PUBLIC_API_URL and NEXT_PUBLIC_SOCKET_URL to your backend URL
   async rewrites() {
