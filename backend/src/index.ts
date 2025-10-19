@@ -37,14 +37,25 @@ app.get("/health/db", async (_req, res) => {
 // Manual migration endpoint (for testing/emergency use only)
 app.all("/admin/migrate", async (_req, res) => {
   try {
-    const { exec } = require("child_process");
-    exec("npx prisma migrate deploy", (error: any, stdout: string, stderr: string) => {
-      if (error) {
-        res.json({ status: "completed", message: "Migration command executed", output: stdout || stderr });
-      } else {
-        res.json({ status: "completed", message: "Migrations processed", output: stdout });
-      }
-    });
+    const { execSync } = require("child_process");
+    console.log("🚀 Starting database migration...");
+    
+    try {
+      // First reset the Prisma client to clear any cache
+      await prisma.$disconnect();
+      
+      // Run migrations with output
+      const output = execSync("npx prisma migrate deploy", { encoding: "utf-8" });
+      console.log("✅ Migrations completed:", output);
+      
+      // Reconnect
+      await prisma.$queryRaw`SELECT 1`;
+      res.json({ status: "success", message: "Migrations applied successfully", output });
+    } catch (migrationError: any) {
+      const errorMsg = migrationError.message || migrationError.stderr || String(migrationError);
+      console.error("❌ Migration error:", errorMsg);
+      res.json({ status: "error", message: "Migration failed", error: errorMsg });
+    }
   } catch (error: any) {
     res.status(500).json({ status: "error", message: error.message });
   }
