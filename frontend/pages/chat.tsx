@@ -886,9 +886,13 @@ export default function ChatPage() {
   });
 
   return (
-    <div className="flex h-screen bg-[#313338] overflow-hidden md:flex-row flex-col">
-      {/* Sidebar */}
-      <div className={`${selectedUser || selectedGroup ? 'hidden md:flex' : 'flex'} md:w-[320px] w-full bg-[#2b2d31] flex-col md:static absolute md:h-full ${selectedUser || selectedGroup ? '' : 'h-full'}`}>
+    <div className="flex h-screen bg-[#313338] overflow-hidden">
+      {/* Sidebar - hidden on mobile when chat is active */}
+      <div className={`flex flex-col ${
+        selectedUser || selectedGroup
+          ? 'hidden md:flex md:w-[320px] md:static' 
+          : 'w-full md:w-[320px] md:static'
+      } bg-[#2b2d31] h-full`}>
         {/* Sidebar Header */}
         <div className="h-12 px-4 flex items-center justify-between border-b border-[#1e1f22] shadow-sm">
           <h1 className="text-white font-semibold text-base">
@@ -1087,7 +1091,11 @@ export default function ChatPage() {
 
       {/* Chat Area */}
       <div 
-        className="flex-1 flex flex-col bg-[#313338] relative overflow-hidden"
+        className={`${
+          selectedUser || selectedGroup
+            ? 'flex md:flex-1 w-full' 
+            : 'hidden md:flex md:flex-1'
+        } flex-col bg-[#313338] relative overflow-hidden`}
         style={{
           backgroundImage: "url('/images/background.jpg')",
           backgroundSize: 'cover',
@@ -1379,9 +1387,9 @@ export default function ChatPage() {
             </div>
           </div>
         ) : (
-          <div className="relative z-10 hidden md:flex flex-col items-center justify-center h-full text-[#b5bac1] px-8 w-full">
+          <div className="relative z-10 flex md:hidden flex-col items-center justify-center h-full text-[#b5bac1] px-8 w-full">
             <p className="text-[#87898c] text-base text-center max-w-md leading-relaxed">
-              Select a conversation from the left sidebar or start a new direct message.
+              Select a conversation from the list above to start chatting.
             </p>
           </div>
         )}
