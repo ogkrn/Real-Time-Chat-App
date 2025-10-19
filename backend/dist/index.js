@@ -33,15 +33,64 @@ app.get("/health/db", async (_req, res) => {
 });
 app.all("/admin/migrate", async (_req, res) => {
     try {
-        const { exec } = require("child_process");
-        exec("npx prisma migrate deploy", (error, stdout, stderr) => {
-            if (error) {
-                res.json({ status: "completed", message: "Migration command executed", output: stdout || stderr });
-            }
-            else {
-                res.json({ status: "completed", message: "Migrations processed", output: stdout });
-            }
-        });
+        const { execSync } = require("child_process");
+        console.log("🚀 Starting database migration...");
+        try {
+            await prismaclient_1.prisma.$disconnect();
+            const output = execSync("npx prisma migrate deploy", { encoding: "utf-8" });
+            console.log("✅ Migrations completed:", output);
+            await prismaclient_1.prisma.$queryRaw `SELECT 1`;
+            res.json({ status: "success", message: "Migrations applied successfully", output });
+        }
+        catch (migrationError) {
+            const errorMsg = migrationError.message || migrationError.stderr || String(migrationError);
+            console.error("❌ Migration error:", errorMsg);
+            res.json({ status: "error", message: "Migration failed", error: errorMsg });
+        }
+    }
+    catch (error) {
+        res.status(500).json({ status: "error", message: error.message });
+    }
+});
+app.all("/admin/reset-db", async (_req, res) => {
+    try {
+        const { execSync } = require("child_process");
+        console.log("🔄 Resetting database...");
+        try {
+            await prismaclient_1.prisma.$disconnect();
+            const output = execSync("npx prisma migrate reset --force", { encoding: "utf-8" });
+            console.log("✅ Database reset completed:", output);
+            await prismaclient_1.prisma.$queryRaw `SELECT 1`;
+            res.json({ status: "success", message: "Database reset and recreated successfully", output });
+        }
+        catch (error) {
+            const errorMsg = error.message || error.stderr || String(error);
+            console.error("❌ Reset error:", errorMsg);
+            res.json({ status: "error", message: "Reset failed", error: errorMsg });
+        }
+    }
+    catch (error) {
+        res.status(500).json({ status: "error", message: error.message });
+    }
+});
+app.all("/admin/baseline", async (_req, res) => {
+    try {
+        const { execSync } = require("child_process");
+        console.log("🔄 Baseline database...");
+        try {
+            await prismaclient_1.prisma.$disconnect();
+            const output = execSync("npx prisma migrate resolve --applied 20251017050009_add_password_reset_table", { encoding: "utf-8" });
+            console.log("✅ Baseline completed:", output);
+            const deployOutput = execSync("npx prisma migrate deploy", { encoding: "utf-8" });
+            console.log("✅ Deploy completed:", deployOutput);
+            await prismaclient_1.prisma.$queryRaw `SELECT 1`;
+            res.json({ status: "success", message: "Database baselined successfully", output: output + "\n" + deployOutput });
+        }
+        catch (error) {
+            const errorMsg = error.message || error.stderr || String(error);
+            console.error("❌ Baseline error:", errorMsg);
+            res.json({ status: "error", message: "Baseline failed", error: errorMsg });
+        }
     }
     catch (error) {
         res.status(500).json({ status: "error", message: error.message });
@@ -56,8 +105,14 @@ app.use("/upload", upload_1.default);
 app.use("/groups", groups_1.default);
 const server = http_1.default.createServer(app);
 const io = new socket_io_1.Server(server, {
-    cors: { origin: "*" },
-    transports: ['polling', 'websocket']
+    cors: {
+        origin: ["https://real-time-chat-app-self-delta.vercel.app", "http://localhost:3000"],
+        methods: ["GET", "POST"],
+        credentials: true
+    },
+    transports: ['websocket', 'polling'],
+    pingInterval: 25000,
+    pingTimeout: 60000
 });
 async function initializeServer() {
     console.log("📡 Using in-memory adapter (suitable for single server deployment)");
