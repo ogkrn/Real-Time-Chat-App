@@ -34,6 +34,22 @@ app.get("/health/db", async (_req, res) => {
   }
 });
 
+// Manual migration endpoint (for testing/emergency use only)
+app.post("/admin/migrate", async (_req, res) => {
+  try {
+    const { exec } = require("child_process");
+    exec("npx prisma migrate deploy", (error: any, stdout: string) => {
+      if (error) {
+        res.json({ status: "warning", message: "Migration attempted", details: error.message });
+      } else {
+        res.json({ status: "ok", message: "Migrations completed", output: stdout });
+      }
+    });
+  } catch (error: any) {
+    res.status(500).json({ status: "error", message: error.message });
+  }
+});
+
 // Serve uploaded files statically
 app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
 
