@@ -61,6 +61,35 @@ app.all("/admin/migrate", async (_req, res) => {
   }
 });
 
+// Baseline existing database for Prisma migrations
+app.all("/admin/baseline", async (_req, res) => {
+  try {
+    const { execSync } = require("child_process");
+    console.log("🔄 Baseline database...");
+    
+    try {
+      await prisma.$disconnect();
+      
+      // Baseline the latest migration
+      const output = execSync("npx prisma migrate resolve --applied 20251017050009_add_password_reset_table", { encoding: "utf-8" });
+      console.log("✅ Baseline completed:", output);
+      
+      // Now deploy remaining migrations
+      const deployOutput = execSync("npx prisma migrate deploy", { encoding: "utf-8" });
+      console.log("✅ Deploy completed:", deployOutput);
+      
+      await prisma.$queryRaw`SELECT 1`;
+      res.json({ status: "success", message: "Database baselined successfully", output: output + "\n" + deployOutput });
+    } catch (error: any) {
+      const errorMsg = error.message || error.stderr || String(error);
+      console.error("❌ Baseline error:", errorMsg);
+      res.json({ status: "error", message: "Baseline failed", error: errorMsg });
+    }
+  } catch (error: any) {
+    res.status(500).json({ status: "error", message: error.message });
+  }
+});
+
 // Serve uploaded files statically
 app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
 
