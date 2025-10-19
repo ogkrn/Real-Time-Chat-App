@@ -886,9 +886,9 @@ export default function ChatPage() {
   });
 
   return (
-    <div className="flex h-screen bg-[#313338] overflow-hidden">
+    <div className="flex h-screen bg-[#313338] overflow-hidden md:flex-row flex-col">
       {/* Sidebar */}
-      <div className="w-[320px] bg-[#2b2d31] flex flex-col">
+      <div className={`${selectedUser || selectedGroup ? 'hidden md:flex' : 'flex'} md:w-[320px] w-full bg-[#2b2d31] flex-col md:static absolute md:h-full ${selectedUser || selectedGroup ? '' : 'h-full'}`}>
         {/* Sidebar Header */}
         <div className="h-12 px-4 flex items-center justify-between border-b border-[#1e1f22] shadow-sm">
           <h1 className="text-white font-semibold text-base">
@@ -1099,9 +1099,20 @@ export default function ChatPage() {
         <div className="absolute inset-0 bg-[#313338]/95 z-0"></div>
         
         {(selectedUser || selectedGroup) ? (
-          <div className="relative z-10 flex flex-col h-full">
+          <div className="relative z-10 flex flex-col h-full w-full md:flex-1">
             {/* Chat Header */}
             <div className="h-12 px-4 flex items-center gap-3 border-b border-[#26272b] shadow-sm bg-[#313338]/50 backdrop-blur-sm">
+              {/* Back button for mobile */}
+              <button
+                onClick={() => { setSelectedUser(null); setSelectedGroup(null); }}
+                className="md:hidden text-[#b5bac1] hover:text-white transition-colors p-1 rounded hover:bg-[#35373c]"
+                title="Back to conversations"
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/>
+                </svg>
+              </button>
+
               {selectedUser ? (
                 <>
                   <span className="text-[#80848e] text-xl">@</span>
@@ -1111,7 +1122,7 @@ export default function ChatPage() {
                 <>
                   <span className="text-[#80848e] text-xl">#</span>
                   <h2 className="text-white font-semibold text-base">{selectedGroup?.name}</h2>
-                  <span className="text-[#87898c] text-sm">
+                  <span className="text-[#87898c] text-sm hidden sm:inline">
                     ({selectedGroup?.members.length} {selectedGroup?.members.length === 1 ? 'member' : 'members'})
                   </span>
                   <button
@@ -1190,7 +1201,7 @@ export default function ChatPage() {
                         )}
                         
                         {/* Message Bubble */}
-                        <div className={`max-w-[70%] group ${isCurrentUser ? 'items-end' : 'items-start'}`}>
+                        <div className={`max-w-[85%] md:max-w-[70%] group ${isCurrentUser ? 'items-end' : 'items-start'}`}>
                           {showAvatar && (
                             <div className={`flex items-baseline gap-2 mb-1 px-1 ${isCurrentUser ? 'flex-row-reverse' : 'flex-row'}`}>
                               <span className="font-medium text-white text-xs">
@@ -1264,8 +1275,8 @@ export default function ChatPage() {
             </div>
 
             {/* Input Area */}
-            <div className="px-4 pb-6 pt-2">
-              <div className="bg-[#383a40] rounded-lg flex items-center gap-2 px-4 py-2.5">
+            <div className="px-3 md:px-4 pb-4 md:pb-6 pt-2 bg-[#313338] flex-shrink-0 w-full">
+              <div className="bg-[#383a40] rounded-lg flex items-center gap-2 px-3 md:px-4 py-2 md:py-2.5">
                 {/* Attach files button */}
                 <button 
                   className="text-[#b5bac1] hover:text-[#dbdee1] transition-colors duration-200 p-1 rounded hover:bg-[#4e5058] disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
@@ -1368,7 +1379,7 @@ export default function ChatPage() {
             </div>
           </div>
         ) : (
-          <div className="relative z-10 flex flex-col items-center justify-center h-full text-[#b5bac1] px-8">
+          <div className="relative z-10 hidden md:flex flex-col items-center justify-center h-full text-[#b5bac1] px-8 w-full">
             <p className="text-[#87898c] text-base text-center max-w-md leading-relaxed">
               Select a conversation from the left sidebar or start a new direct message.
             </p>
