@@ -19,6 +19,21 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Health check endpoint (doesn't require database)
+app.get("/health", (req, res) => {
+  res.json({ status: "ok", message: "Server is running" });
+});
+
+// Database status endpoint
+app.get("/health/db", async (req, res) => {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    res.json({ status: "ok", message: "Database connection successful" });
+  } catch (error: any) {
+    res.status(500).json({ status: "error", message: error.message || "Database connection failed" });
+  }
+});
+
 // Serve uploaded files statically
 app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
 
