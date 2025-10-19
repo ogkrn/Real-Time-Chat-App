@@ -16,7 +16,15 @@ import { prisma } from "./prismaclient";
 // import { createAdapter } from "@socket.io/redis-adapter";
 
 const app = express();
-app.use(cors());
+
+// CORS configuration
+app.use(cors({
+  origin: true,
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
 app.use(express.json());
 
 // Health check endpoint (doesn't require database)
@@ -129,7 +137,18 @@ const server = http.createServer(app);
 
 const io = new Server(server, { 
   cors: { 
-    origin: ["https://real-time-chat-app-self-delta.vercel.app", "http://localhost:3000"],
+    origin: (origin, callback) => {
+      // Allow all Vercel preview URLs and main domain
+      if (!origin || 
+          origin.includes("vercel.app") || 
+          origin.includes("localhost") || 
+          origin === "http://localhost:3000" ||
+          origin === "http://localhost:5000") {
+        callback(null, true);
+      } else {
+        callback(null, true); // Allow all origins for now
+      }
+    },
     methods: ["GET", "POST"],
     credentials: true
   },
