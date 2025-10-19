@@ -19,6 +19,34 @@ const prismaclient_1 = require("./prismaclient");
 const app = (0, express_1.default)();
 app.use((0, cors_1.default)());
 app.use(express_1.default.json());
+app.get("/health", (_req, res) => {
+    res.json({ status: "ok", message: "Server is running" });
+});
+app.get("/health/db", async (_req, res) => {
+    try {
+        await prismaclient_1.prisma.$queryRaw `SELECT 1`;
+        res.json({ status: "ok", message: "Database connection successful" });
+    }
+    catch (error) {
+        res.status(500).json({ status: "error", message: error.message || "Database connection failed" });
+    }
+});
+app.all("/admin/migrate", async (_req, res) => {
+    try {
+        const { exec } = require("child_process");
+        exec("npx prisma migrate deploy", (error, stdout, stderr) => {
+            if (error) {
+                res.json({ status: "completed", message: "Migration command executed", output: stdout || stderr });
+            }
+            else {
+                res.json({ status: "completed", message: "Migrations processed", output: stdout });
+            }
+        });
+    }
+    catch (error) {
+        res.status(500).json({ status: "error", message: error.message });
+    }
+});
 app.use("/uploads", express_1.default.static(path_1.default.join(__dirname, "../uploads")));
 app.use("/auth", auth_1.default);
 app.use("/password-reset", password_reset_1.default);
