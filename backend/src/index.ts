@@ -61,6 +61,31 @@ app.all("/admin/migrate", async (_req, res) => {
   }
 });
 
+// Reset and recreate database (DANGER - deletes all data!)
+app.all("/admin/reset-db", async (_req, res) => {
+  try {
+    const { execSync } = require("child_process");
+    console.log("🔄 Resetting database...");
+    
+    try {
+      await prisma.$disconnect();
+      
+      // Reset the database - this will drop all tables and re-run migrations
+      const output = execSync("npx prisma migrate reset --force", { encoding: "utf-8" });
+      console.log("✅ Database reset completed:", output);
+      
+      await prisma.$queryRaw`SELECT 1`;
+      res.json({ status: "success", message: "Database reset and recreated successfully", output });
+    } catch (error: any) {
+      const errorMsg = error.message || error.stderr || String(error);
+      console.error("❌ Reset error:", errorMsg);
+      res.json({ status: "error", message: "Reset failed", error: errorMsg });
+    }
+  } catch (error: any) {
+    res.status(500).json({ status: "error", message: error.message });
+  }
+});
+
 // Baseline existing database for Prisma migrations
 app.all("/admin/baseline", async (_req, res) => {
   try {
