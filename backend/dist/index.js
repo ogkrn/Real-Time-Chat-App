@@ -17,7 +17,12 @@ const groups_1 = __importDefault(require("./routes/groups"));
 const password_reset_1 = __importDefault(require("./routes/password-reset"));
 const prismaclient_1 = require("./prismaclient");
 const app = (0, express_1.default)();
-app.use((0, cors_1.default)());
+app.use((0, cors_1.default)({
+    origin: true,
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
+}));
 app.use(express_1.default.json());
 app.get("/health", (_req, res) => {
     res.json({ status: "ok", message: "Server is running" });
@@ -106,13 +111,18 @@ app.use("/groups", groups_1.default);
 const server = http_1.default.createServer(app);
 const io = new socket_io_1.Server(server, {
     cors: {
-        origin: ["https://real-time-chat-app-self-delta.vercel.app", "http://localhost:3000"],
+        origin: (_origin, callback) => {
+            callback(null, true);
+        },
         methods: ["GET", "POST"],
         credentials: true
     },
-    transports: ['websocket', 'polling'],
+    transports: ['polling', 'websocket'],
     pingInterval: 25000,
-    pingTimeout: 60000
+    pingTimeout: 60000,
+    allowUpgrades: true,
+    path: '/socket.io/',
+    serveClient: false
 });
 async function initializeServer() {
     console.log("📡 Using in-memory adapter (suitable for single server deployment)");
