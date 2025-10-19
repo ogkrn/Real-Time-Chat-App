@@ -346,22 +346,18 @@ export default function ChatPage() {
       return;
     }
 
-    // Auto-detect Socket.IO URL based on environment
-    // If accessing via ngrok or network, use the current origin
-    // Otherwise use localhost for development
+    // Determine Socket.IO URL based on environment
     let socketUrl = "";
     
     if (typeof window !== "undefined") {
       const hostname = window.location.hostname;
-      const isNgrok = hostname.includes('ngrok');
-      const isNetwork = !hostname.includes('localhost') && !hostname.includes('127.0.0.1');
       
-      if (isNgrok || isNetwork) {
-        // Using ngrok or network IP - connect to current origin with proxy
-        socketUrl = window.location.origin;
-      } else {
-        // Local development - connect directly to backend
+      if (hostname === "localhost" || hostname === "127.0.0.1") {
+        // Local development
         socketUrl = "http://localhost:5000";
+      } else {
+        // Production - use Railway backend URL
+        socketUrl = "https://real-time-chat-app-production-f44d.up.railway.app";
       }
     }
     
