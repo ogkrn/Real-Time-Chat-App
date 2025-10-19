@@ -128,8 +128,14 @@ app.use("/groups", groupsRoutes);
 const server = http.createServer(app);
 
 const io = new Server(server, { 
-  cors: { origin: "*" },
-  transports: ['polling', 'websocket']
+  cors: { 
+    origin: ["https://real-time-chat-app-self-delta.vercel.app", "http://localhost:3000"],
+    methods: ["GET", "POST"],
+    credentials: true
+  },
+  transports: ['websocket', 'polling'],
+  pingInterval: 25000,
+  pingTimeout: 60000
 });
 
 // Initialize server
