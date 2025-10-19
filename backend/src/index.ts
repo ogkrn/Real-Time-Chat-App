@@ -20,12 +20,12 @@ app.use(cors());
 app.use(express.json());
 
 // Health check endpoint (doesn't require database)
-app.get("/health", (req, res) => {
+app.get("/health", (_req, res) => {
   res.json({ status: "ok", message: "Server is running" });
 });
 
 // Database status endpoint
-app.get("/health/db", async (req, res) => {
+app.get("/health/db", async (_req, res) => {
   try {
     await prisma.$queryRaw`SELECT 1`;
     res.json({ status: "ok", message: "Database connection successful" });
