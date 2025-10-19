@@ -137,24 +137,19 @@ const server = http.createServer(app);
 
 const io = new Server(server, { 
   cors: { 
-    origin: (origin, callback) => {
-      // Allow all Vercel preview URLs and main domain
-      if (!origin || 
-          origin.includes("vercel.app") || 
-          origin.includes("localhost") || 
-          origin === "http://localhost:3000" ||
-          origin === "http://localhost:5000") {
-        callback(null, true);
-      } else {
-        callback(null, true); // Allow all origins for now
-      }
+    origin: (_origin, callback) => {
+      // Allow all origins for Socket.IO
+      callback(null, true);
     },
     methods: ["GET", "POST"],
     credentials: true
   },
-  transports: ['websocket', 'polling'],
+  transports: ['polling', 'websocket'],  // Polling first (more reliable)
   pingInterval: 25000,
-  pingTimeout: 60000
+  pingTimeout: 60000,
+  allowUpgrades: true,
+  path: '/socket.io/',
+  serveClient: false
 });
 
 // Initialize server

@@ -6,9 +6,13 @@ const backendUrl = process.env.NEXT_PUBLIC_API_URL ||
     : "https://real-time-chat-app-production-f44d.up.railway.app");
 
 export const socket = io(backendUrl, {
-  transports: ["websocket", "polling"],
+  transports: ["polling", "websocket"],  // Polling first for reliability
   reconnection: true,
-  reconnectionDelay: 1000,
-  reconnectionDelayMax: 5000,
-  reconnectionAttempts: 5
+  reconnectionDelay: 500,
+  reconnectionDelayMax: 3000,
+  reconnectionAttempts: Infinity,
+  timeout: 20000,
+  path: '/socket.io/',
+  upgrade: true,
+  rememberUpgrade: false
 });
