@@ -1,6 +1,11 @@
 import { io } from "socket.io-client";
 
-export const socket = io(process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000", {
+const backendUrl = process.env.NEXT_PUBLIC_API_URL || 
+  (typeof window !== "undefined" && window.location.hostname === "localhost" 
+    ? "http://localhost:5000" 
+    : "https://real-time-chat-app-production-f44d.up.railway.app");
+
+export const socket = io(backendUrl, {
   transports: ["websocket", "polling"],
   reconnection: true,
   reconnectionDelay: 1000,
