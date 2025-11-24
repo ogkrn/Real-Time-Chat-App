@@ -212,7 +212,15 @@ async function initializeServer() {
 
     socket.on("send_message", async (data) => {
       try {
-        console.log("📨 Received send_message event:", JSON.stringify(data, null, 2));
+        // Avoid logging sensitive tokens or full user objects
+        try {
+          const logData = { ...data } as any;
+          if (logData.token) logData.token = "<<REDACTED_TOKEN>>";
+          if (logData.password) logData.password = "<<REDACTED_PASSWORD>>";
+          console.log("📨 Received send_message event:", JSON.stringify(logData, null, 2));
+        } catch (e) {
+          console.log("📨 Received send_message event (could not stringify log)");
+        }
         const { token, content, recipientId, groupId, fileUrl, fileName, fileType, fileSize } = data as { 
           token?: string; 
           content: string; 
@@ -281,6 +289,18 @@ async function initializeServer() {
           include: { user: true },
         });
 
+        // Sanitize user object before emitting to clients
+        const sanitizeUser = (user: any) => {
+          if (!user) return null;
+          return {
+            id: user.id,
+            username: user.username,
+            createdAt: user.createdAt
+          };
+        };
+
+        const safeMessage = { ...message, user: sanitizeUser((message as any).user) } as any;
+
         console.log("💾 Message created:", message.id, "GroupId:", groupId, "RecipientId:", recipientId);
 
         // Handle group messages
@@ -292,13 +312,13 @@ async function initializeServer() {
             select: { userId: true }
           });
 
-          // Emit to all sockets of group members
+          // Emit to all sockets of group members (send sanitized message)
           const sockets = await io.fetchSockets();
           console.log("🔍 Total sockets:", sockets.length, "Group members:", members.length);
           sockets.forEach(s => {
             if (members.some(m => m.userId === s.data?.user?.id)) {
               console.log("✅ Emitting to socket:", s.id, "user:", s.data?.user?.username);
-              s.emit("receive_message", message);
+              s.emit("receive_message", safeMessage);
             }
           });
         } else if (recipientId) {
@@ -309,7 +329,7 @@ async function initializeServer() {
           senderSockets.forEach(s => {
             if (s.data?.user?.id === userId) {
               console.log("✅ Emitting to sender:", s.id, "user:", s.data?.user?.username);
-              s.emit("receive_message", message);
+              s.emit("receive_message", safeMessage);
             }
           });
 
@@ -317,12 +337,13 @@ async function initializeServer() {
           senderSockets.forEach(s => {
             if (s.data?.user?.id === recipientId) {
               console.log("✅ Emitting to recipient:", s.id, "user:", s.data?.user?.username);
-              s.emit("receive_message", message);
+              s.emit("receive_message", safeMessage);
             }
           });
         } else {
           // Broadcast to all connected clients (general chat - backward compatibility)
-          io.emit("receive_message", message);
+          // Broadcast sanitized message
+          io.emit("receive_message", safeMessage);
         }
       } catch (error) {
         console.error("JWT verification failed:", error);

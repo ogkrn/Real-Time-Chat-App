@@ -107,8 +107,7 @@ router.get("/users", async (_req, res) => {
       select: {
         id: true,
         username: true,
-        email: true,
-        createdAt: true
+        // intentionally excluding email and other sensitive fields
       },
       orderBy: {
         username: 'asc'

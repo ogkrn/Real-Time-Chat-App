@@ -49,8 +49,7 @@ router.get("/:userId", async (req, res) => {
         user: {
           select: {
             id: true,
-            username: true,
-            email: true
+            username: true
           }
         }
       },
@@ -115,8 +114,7 @@ router.get("/group/:groupId", async (req, res) => {
         user: {
           select: {
             id: true,
-            username: true,
-            email: true
+            username: true
           }
         }
       },
