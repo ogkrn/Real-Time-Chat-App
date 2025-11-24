@@ -3,6 +3,8 @@ import http from "http";
 import { Server } from "socket.io";
 import cors from "cors";
 import jwt from "jsonwebtoken";
+import helmet from "helmet";
+import compression from "compression";
 import path from "path";
 import authRoutes from "./routes/auth";
 import messagesRoutes from "./routes/messages";
@@ -16,6 +18,14 @@ import { prisma } from "./prismaclient";
 // import { createAdapter } from "@socket.io/redis-adapter";
 
 const app = express();
+
+// Security & performance
+// Disable exposing Express via the X-Powered-By header
+app.disable('x-powered-by');
+// Helmet helps set secure HTTP headers (CSP disabled to avoid breaking dev/test)
+app.use(helmet({ contentSecurityPolicy: false } as any));
+// Enable gzip compression for responses
+app.use(compression());
 
 // CORS configuration
 app.use(cors({
