@@ -348,21 +348,22 @@ export default function ChatPage() {
 
     // Determine Socket.IO URL based on environment
     let socketUrl = "";
-    
+
     if (typeof window !== "undefined") {
       const hostname = window.location.hostname;
-      
+
       if (hostname === "localhost" || hostname === "127.0.0.1") {
         // Local development
         socketUrl = "http://localhost:5000";
       } else {
-        // Production - use Railway backend URL
-        socketUrl = "https://real-time-chat-app-production-f44d.up.railway.app";
+        // Production - prefer NEXT_PUBLIC_SOCKET_URL then NEXT_PUBLIC_API_URL
+        const rawSocket = process.env.NEXT_PUBLIC_SOCKET_URL || process.env.NEXT_PUBLIC_API_URL || "";
+        socketUrl = rawSocket ? rawSocket.replace(/\/+$/, "") : "";
       }
     }
-    
+
     console.log("🔌 Connecting to Socket.IO at:", socketUrl);
-    
+
     const socket = io(socketUrl, { 
       auth: { token },
       transports: ['polling', 'websocket'],  // Use polling first (better for ngrok free tier)

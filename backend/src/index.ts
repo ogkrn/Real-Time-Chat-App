@@ -324,15 +324,17 @@ async function initializeServer() {
     });
   });
 
-  // Start the server
-  server.listen(5000, () => {
-    console.log("🚀 Backend running on port 5000");
-    console.log("📡 Socket.IO server initialized");
+  // Start the server (use dynamic port from environment if provided, e.g. Heroku)
+  const PORT = process.env['PORT'] ? Number(process.env['PORT']) : 5000;
+  // Listen on the configured port
+  server.listen(PORT, () => {
+    console.log(`Backend running on port ${PORT}`);
+    console.log("Socket.IO server initialized");
   });
 }
 
 // Initialize everything
 initializeServer().catch((error) => {
-  console.error("❌ Failed to start server:", error);
+  console.error("Failed to start server:", error);
   process.exit(1);
 });
