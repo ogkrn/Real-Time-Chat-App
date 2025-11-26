@@ -1,0 +1,7 @@
+# Python dependencies (optional, for tooling/scripts)
+# This project is primarily Node.js/TypeScript based.
+# If you use Python scripts for automation, add dependencies here.
+
+# Example:
+# requests>=2.28.0
+# python-dotenv>=1.0.0
